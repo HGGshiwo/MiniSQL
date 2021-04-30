@@ -227,13 +227,129 @@ class MiniSQL(object):
         result = error.no_error
         self.write_log("create table", result)
         return result
+    
+    def insert_index(self, table_name, index_value, index, address):
+        '''
+        将一个数据地址和搜索码插入到对应的索引文件中
+        table_name      表名称，用来计算根
+        index           索引名称，用来计算根
+        index_value     索引值
+        address         数据文件所在位置
+        '''
+        #循环到叶子
+        current_table = self.sys_buffer[table_name]
+        current_address = current_table["index_list"][index] #根的位置
+        size = os.path.getsize(current_address)
+        current_node = None
+        if(size == 0):#如果根为空，新建一个节点
+            current_node = {}
+            current_node["address"] = []
+            current_node["index_value"] = []
+            current_node["parent"] = current_address
+            current_node["is_leaf"] = True
+        else: #找到需要插入的节点   
+            while True:
+                current_node = self.read_index(current_address)
+                if current_node["is_leaf"] == True:
+                    break
+                i = 0
+                while(index_value > current_node["index_value"][i]):
+                    i += 1
+                current_address = current_node["address"][i]  
+        '''
+        进行迭代的值
+        current_node    当前准备插入的节点
+        current_address 当前节点的地址
+        index_value     插入当前节点的搜索码的值
+        address         需要插入当前节点的指针
+        split_node      当前节点分裂出的节点
+        split_address   分裂出的节点的地址
 
+        n个搜索码，n+1个指针，1个指向后一个文件的指针。分裂。 
+        current_table 是为了查表方便
+        必须先更新sys_buffer，再更新current_table，进行查表           
+        '''
+        #开始插入
+        while(True):
+            #找到节点中需要插入的位置
+            i = 0
+            while i < len(current_node["index_value"]):
+                if current_node["index_value"][i] >= index_value:
+                    break
+                i += 1
+            #插入
+            current_node["index_value"].insert(i, index_value)
+            current_node["address"].insert(i, address)
+
+            if len(current_node["index_value"]) < self.n:
+                self.write_index(current_address, current_node)
+                break       
+            
+            #开始分裂，分裂出来的放在前面   
+            self.sys_buffer[table_name]["index_num"] += 1
+            current_table = self.sys_buffer[table_name]
+            split_node = {}
+            split_node["address"] = []
+            split_node["address"].extend(copy.copy(current_node["address"][0:self.n//2]))              
+            split_address = table_name + "/index/" + str(current_table["index_num"])
+            file = open(split_address, 'w')
+            file.close()
+            split_node["index_value"] = [] 
+            split_node["index_value"].extend(copy.copy(current_node["index_value"][0:self.n//2]))
+            split_node["is_leaf"] = current_node["is_leaf"]
+            current_node["address"] = current_node["address"][self.n//2:self.n+1]
+            current_node["index_value"] = current_node["index_value"][self.n//2:self.n+1]
+            split_node["parent"] = current_node["parent"]
+        
+            if(split_node["is_leaf"]): #如果是叶子
+                split_node["address"].append(current_address)
+            else:
+                for child_address in split_node["address"]:
+                    child = self.read_index(child_address)
+                    child["parent"] = split_address
+                    self.write_index(child_address, child)
+            
+            self.write_index(current_address, current_node)
+            self.write_index(split_address, split_node) 
+            
+            #更新迭代变量
+            address = split_address
+            right_address = current_address
+            current_address = current_node["parent"]
+            current_node = self.read_index(current_address)
+            index_value = split_node["index_value"][0]
+            
+            #如果是根的分裂
+            if(split_node["parent"] == right_address): 
+                self.sys_buffer[table_name]["index_num"] += 1
+                current_table = self.sys_buffer[table_name]
+                current_address = table_name + '/index/' + str(current_table["index_num"])
+                file = open(current_address, 'a+')
+                file.close()
+                current_node = {}
+                current_node["parent"] = current_address
+                current_node["is_leaf"] = False
+                current_node["index_value"] = []
+                current_node["address"] = []
+                current_node["address"].append(right_address)
+                self.sys_buffer[table_name]["index_list"][index] = current_address
+                right_node = self.read_index(right_address)
+                right_node["parent"] = current_address
+                self.write_index(right_address, right_node)
+                right_node = self.read_index(address)
+                right_node["parent"] = current_address
+                self.write_index(address, right_node)
+                self.write_index(current_address, current_node)
+
+        self.write_index("sys", self.sys_buffer) #调用结束后都需要写入
+        result = error.no_error
+        self.write_log("insert", result)
+        return result
+    
     def insert(self, table_name, value_list):
         '''
-        insert into table_name values
-        更新table_name/data
-        更新table_name/index
-        更新sys和sys_buffer的data_num(可能)
+        在data文件中插入一条数据
+        在index文件写入一条数据
         '''
         result = None
         if table_name not in self.sys_buffer.keys():
@@ -265,119 +381,14 @@ class MiniSQL(object):
 
         size = struct.calcsize(fmt) #一条记录的字节数
         offset = int(os.path.getsize(data_address)/size) #文件中所有记录的数目
-        data_address = data_address + ":" + str(offset)
         
-        for column in list(current_table["index_list"].keys()): 
-            #循环到叶子
-            current_address = current_table["index_list"][column] #根的位置
-            index_value = data[column]
-            size = os.path.getsize(current_address)
-            current_node = None
-            if(size == 0):#如果根为空，新建一个节点
-                current_node = {}
-                current_node["address"] = []
-                current_node["index_value"] = []
-                current_node["parent"] = current_address
-                current_node["is_leaf"] = True
-            else: #找到需要插入的节点   
-                while True:
-                    current_node = self.read_index(current_address)
-                    if current_node["is_leaf"] == True:
-                        break
-                    i = 0
-                    while(index_value > current_node["index_value"][i]):
-                        i += 1
-                    current_address = current_node["address"][i]
-            address = data_address  
-            '''
-            进行迭代的值
-            current_node    当前准备插入的节点
-            current_address 当前节点的地址
-            index_value     插入当前节点的搜索码的值
-            address         需要插入当前节点的指针
-            split_node      当前节点分裂出的节点
-            split_address   分裂出的节点的地址
-
-            n个搜索码，n+1个指针，1个指向后一个文件的指针。分裂。 
-            current_table 是为了查表方便
-            必须先更新sys_buffer，再更新current_table，进行查表           
-            '''
-            #开始插入
-            while(True):
-                #找到节点中需要插入的位置
-                i = 0
-                while i < len(current_node["index_value"]):
-                    if current_node["index_value"][i] >= index_value:
-                        break
-                    i += 1
-                #插入
-                current_node["index_value"].insert(i, index_value)
-                current_node["address"].insert(i, address)
-
-                if len(current_node["index_value"]) < self.n:
-                    self.write_index(current_address, current_node)
-                    break       
-                
-                #开始分裂，分裂出来的放在前面   
-                self.sys_buffer[table_name]["index_num"] += 1
-                current_table = self.sys_buffer[table_name]
-                split_node = {}
-                split_node["address"] = []
-                split_node["address"].extend(copy.copy(current_node["address"][0:self.n//2]))              
-                split_address = table_name + "/index/" + str(current_table["index_num"])
-                file = open(split_address, 'w')
-                file.close()
-                split_node["index_value"] = [] 
-                split_node["index_value"].extend(copy.copy(current_node["index_value"][0:self.n//2]))
-                split_node["is_leaf"] = current_node["is_leaf"]
-                current_node["address"] = current_node["address"][self.n//2:self.n+1]
-                current_node["index_value"] = current_node["index_value"][self.n//2:self.n+1]
-                split_node["parent"] = current_node["parent"]
-           
-                if(split_node["is_leaf"]): #如果是叶子
-                    split_node["address"].append(current_address)
-                else:
-                    for child_address in split_node["address"]:
-                        child = self.read_index(child_address)
-                        child["parent"] = split_address
-                        self.write_index(child_address, child)
-                
-                self.write_index(current_address, current_node)
-                self.write_index(split_address, split_node) 
-                
-                #更新迭代变量
-                address = split_address
-                right_address = current_address
-                current_address = current_node["parent"]
-                current_node = self.read_index(current_address)
-                index_value = split_node["index_value"][0]
-                
-                #如果是根的分裂
-                if(split_node["parent"] == right_address): 
-                    self.sys_buffer[table_name]["index_num"] += 1
-                    current_table = self.sys_buffer[table_name]
-                    current_address = table_name + '/index/' + str(current_table["index_num"])
-                    file = open(current_address, 'a+')
-                    file.close()
-                    current_node = {}
-                    current_node["parent"] = current_address
-                    current_node["is_leaf"] = False
-                    current_node["index_value"] = []
-                    current_node["address"] = []
-                    current_node["address"].append(right_address)
-                    self.sys_buffer[table_name]["index_list"][column] = current_address
-                    right_node = self.read_index(right_address)
-                    right_node["parent"] = current_address
-                    self.write_index(right_address, right_node)
-                    right_node = self.read_index(address)
-                    right_node["parent"] = current_address
-                    self.write_index(address, right_node)
-                    self.write_index(current_address, current_node)
-
-            self.write_index("sys", self.sys_buffer) #调用结束后都需要写入
-            result = error.no_error
-            self.write_log("insert", result)
-            return result
+        for index in list(current_table["index_list"].keys()): 
+            data_address = data_address + ":" + str(offset)
+            index_value = data[index]
+            result = self.insert_index(table_name, index_value, index, data_address)
+            if result != error.no_error:
+                return result
+        return result
 
     def select(self):
         pass
@@ -406,7 +417,7 @@ root.reset_sys()
 column_list = {'a':'1s', 'b':'1s'}
 e = root.create_table('master', column_list, 'a')
 # print(e)
-for i in range(1000):
+for i in range(100):
     value_list = ['a', 'a']
     e = root.insert('master', value_list)
     print(e)

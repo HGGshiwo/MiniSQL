@@ -1,12 +1,10 @@
 {
-    "parent": "master/index/184",
+    "parent": "master/index/89",
     "is_leaf": false,
     "index_value": [
-        "a",
         "a"
     ],
     "address": [
-        "master/index/120",
         "master/index/88",
         "master/index/42"
     ]
