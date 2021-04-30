@@ -1,0 +1,12 @@
+{
+    "address": [
+        "master/index/423",
+        "master/index/422"
+    ],
+    "index_value": [
+        "a",
+        "a"
+    ],
+    "is_leaf": false,
+    "parent": "master/index/420"
+}
