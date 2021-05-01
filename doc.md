@@ -14,7 +14,7 @@
 
 数据库索引文件用json存储
 
-## 2 MiniSQL类(class MiniSQL)
+### 2 MiniSQL类(class MiniSQL)
 
 | 属性名称     | 含义                             | 数据结构                              |
 | ------------ | -------------------------------- | ------------------------------------- |
@@ -164,7 +164,7 @@ where column1 > 3 and colmn2 < 4
 ```
 sys={
 	"user":[{"user_name":value, "password":value}],
-	"privilege":[{"user_name":value,"table_name","wen","ren"},],
+	"privilege":[{"user_name","table_name","wen","ren","is_owner"},],
 	"log":[{"time", "user_name", "operation", "result"},],
 	"table1":{"name", "data_num", "index_num","fmt","column_list","index_list","primary_key"}
 	...
@@ -178,12 +178,13 @@ sys={
 | user_name          | 用户名 |
 | password           | 密码   |
 
-| privilege列表中的字典键 | 含义   |
-| ----------------------- | ------ |
-| user_name               | 用户名 |
-| table_name              | 表名   |
-| wen                     | 写权限 |
-| ren                     | 读权限 |
+| privilege列表中的字典键 | 含义       |
+| ----------------------- | ---------- |
+| user_name               | 用户名     |
+| table_name              | 表名       |
+| wen                     | 写权限     |
+| ren                     | 读权限     |
+| is_owner                | 表的所有者 |
 
 | log列表中的字典键 | 含义     |
 | ----------------- | -------- |
@@ -210,12 +211,12 @@ sys={
 
 使用一个json文件存储
 
-| 属性名      | 含义             | 数据类型 |
-| ----------- | ---------------- | -------- |
-| address     | 地址，节点的地址 | 列表     |
-| index_value | 索引的值         | 列表     |
-| is_leaf     | 是否是叶子       | bool     |
-| parent      | 父亲的地址       | string   |
+| 属性名      | 含义                           | 数据类型 |
+| ----------- | ------------------------------ | -------- |
+| address     | 所在数据文件的地址，以及第几条 | 列表     |
+| index_value | 索引的值                       | 列表     |
+| is_leaf     | 是否是叶子                     | bool     |
+| parent      | 父亲的地址                     | string   |
 
 ### 3.3 数据文件存储
 
@@ -245,7 +246,7 @@ bool c d e #第二条记录，真实存储时不分行
 			|-- 1
 			|-- 2
 			|-- 3
-	|--	table1
+	|--	table2
 		|-- data
 			|-- 1
 			|-- 2
@@ -287,8 +288,58 @@ python格式字符，支持的类型见下表
 
 ## 6 用户界面
 
-| 支持的名令                        | 参数              |
-| --------------------------------- | ----------------- |
-| login [user_name] with [password] | user_name：用户名 |
-|                                   |                   |
+| 支持的命令                                               | 备注               |
+| -------------------------------------------------------- | ------------------ |
+| login [user_name] with [password]                        | 暂定               |
+| create table [table_name] [column_list, primary key]     | 见标准T-sql语句    |
+| drop table [table_name]                                  | 见标准T-sql语句    |
+| insert into [table_name] with value [value_list]         | 仅支持一条语句插入 |
+| select [column_list] from [table_name] where [condition] | 支持嵌套查询，暂定 |
+| create index [index] on [table_name]                     | 见标准T-sql语句    |
+| delete index [index] on [table_name]                     | 见标准T-sql语句    |
+| grant [privilege] on [table_name] to [user_name]         | 见标准T-sql语句    |
+| revoke [privilege] on [table_name] to [user_name]        | 见标准T-sql语句    |
+| execute [file_name]                                      | 执行文件，暂定     |
+| quit                                                     | 退出系统           |
 
+MiniSQLTool文件并非一个类
+
+是用户交互界面，主要实现用户语句分解，输出查询结果等
+
+输出的格式：查询的输出格式
+
+时间：操作所花费的时间
+
+结果：是否成功
+
+
+
+## 7 权限管理
+
+权限分为三种
+
+| 权限     | 解释                         | 权限转移                                       |
+| -------- | ---------------------------- | ---------------------------------------------- |
+| is_owner | 表的所有者，具有读写删除权限 | 可以赋予/收回读写权限                          |
+| wen      | 写权限                       | 如果有该权限，可以赋予给其他用户，无法收回权限 |
+| ren      | 读权限                       | 同上                                           |
+
+root用户是所有表的所有者。
+
+## 8 优点
+
+1.数据文件二进制存储，分结点存储
+
+2.索引文件结点存储
+
+3.自定义文件大小
+
+4.索引的json保存方式
+
+5.操作写入log
+
+6.完善的报错
+
+7.支持中缀表达式查询
+
+8.相对完善的权限管理

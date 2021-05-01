@@ -216,6 +216,7 @@ class MiniSQL(object):
         privilege['table_name'] = table_name
         privilege['wen'] = True
         privilege['ren'] = True
+        privilege['is_owner'] = True
         self.sys_buffer["privilege"].append(privilege)
         self.write_index('sys', self.sys_buffer) 
         
@@ -425,13 +426,16 @@ class MiniSQL(object):
         '''
         pass
 
-    def create_index(self):
+    def create_index(self, table_name, index):
+        '''
+        在指定表创建一个索引
+        '''
         pass
 
-    def grant(self):
+    def grant(self, user_name, table_name, privilege):
         pass
 
-    def revoke(self):
+    def revoke(self, user_name, table_name, privilege):
         pass 
 
 # #test:

@@ -3,10 +3,7 @@ from MiniSQL import error
 import re
 
 if __name__ == "__main__":
-    start_message = '''
-MiniSQL[2019/4/30 powered by Ser]
-
-    '''
+    start_message = 'MiniSQL[2021/4/30 powered by Ser]\n'
     print(start_message)
 
     #开始登陆
@@ -36,7 +33,7 @@ MiniSQL[2019/4/30 powered by Ser]
         elif(e == error.password_not_correct):
             print("MiniSQL> 密码错误。")
         else:
-            print("MiniSQL/" + user + " > 登陆成功。欢迎您。")
+            print("MiniSQL/" + user + "> 登陆成功。欢迎您。")
             break
     
     #开始等待操作
