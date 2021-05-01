@@ -45,6 +45,10 @@ class MiniSQL(object):
         '''
         按照指定格式从文件中读数据
         '''
+        if not os.path.exists(address):
+            file = open(address, 'a+')
+            file.close()
+
         fmt = fmt + '?'
         if address not in self.data_buffer.keys():
             file = open(address, 'rb') 
@@ -77,9 +81,11 @@ class MiniSQL(object):
         fmt: 数据格式
         data: 元组，要求字符格式
         '''
+        file_size = os.path.getsize(address) if os.path.exists(address) else 0
+
         fmt = fmt + '?'
         size = struct.calcsize(fmt)
-        if(os.path.getsize(address) + size > self.m):
+        if(file_size + size > self.m):
             return False    #如果插入后文件大小大于4k，则插入失败
         
         if address not in self.data_buffer.keys():
@@ -117,7 +123,9 @@ class MiniSQL(object):
         file.close()
         
     def check_user(self, user_name, password):
-        #开始验证用户
+        '''
+        验证用户
+        '''
         is_find = False
         for user in self.sys_buffer["user"]:
             if user["user_name"] == user_name:
@@ -213,15 +221,11 @@ class MiniSQL(object):
         
         #新建data文件
         address = table_name + '/data/'
-        os.makedirs(address)
-        file = open(address + '1', 'a+')
-        file.close()   
+        os.makedirs(address)   
         
         #新建index文件
         address = table_name + '/index/'
         os.makedirs(address)
-        file = open(address + '1', 'a+')
-        file.close()
         
         #写入log文件
         result = error.no_error
@@ -239,9 +243,8 @@ class MiniSQL(object):
         #循环到叶子
         current_table = self.sys_buffer[table_name]
         current_address = current_table["index_list"][index] #根的位置
-        size = os.path.getsize(current_address)
         current_node = None
-        if(size == 0):#如果根为空，新建一个节点
+        if(not os.path.exists(current_address)):#如果根为空，新建一个节点
             current_node = {}
             current_node["address"] = []
             current_node["index_value"] = []
@@ -292,8 +295,6 @@ class MiniSQL(object):
             split_node["address"] = []
             split_node["address"].extend(copy.copy(current_node["address"][0:self.n//2]))              
             split_address = table_name + "/index/" + str(current_table["index_num"])
-            file = open(split_address, 'w')
-            file.close()
             split_node["index_value"] = [] 
             split_node["index_value"].extend(copy.copy(current_node["index_value"][0:self.n//2]))
             split_node["is_leaf"] = current_node["is_leaf"]
@@ -324,8 +325,6 @@ class MiniSQL(object):
                 self.sys_buffer[table_name]["index_num"] += 1
                 current_table = self.sys_buffer[table_name]
                 current_address = table_name + '/index/' + str(current_table["index_num"])
-                file = open(current_address, 'a+')
-                file.close()
                 current_node = {}
                 current_node["parent"] = current_address
                 current_node["is_leaf"] = False
@@ -375,8 +374,6 @@ class MiniSQL(object):
             self.sys_buffer[table_name]["data_num"] += 1
             current_table = self.sys_buffer[table_name]
             data_address = table_name + "/data/" + str(current_table["data_num"])
-            file = open(data_address,'w')
-            file.close()
             self.write_data(data_address, fmt, data)
 
         size = struct.calcsize(fmt) #一条记录的字节数
@@ -390,19 +387,45 @@ class MiniSQL(object):
                 return result
         return result
 
-    def select(self):
+    def delete_index(self, table_name, index_value, index):
+        '''
+        删除索引
+        table_name      用来计算根
+        index_value     索引的值，搜索码的值
+        index           索引名称，用来计算根
+        '''
+
+    def select_index(self, table_name, condition):
+        '''
+        返回的是:
+        index指针的位置：index节点的地址 + 节点的第几个指针(如果存在index)
+        或者是未找到的error
+        '''
         pass
 
-    def drop_table(self):
+    def select(self, table_name, condition):
+        '''
+        返回的是字典的列表
+        '''
+    
+    def drop_table(self, table_name):
         pass
 
-    def delete(self):
+    def drop_column(self, table_name, column):
+        '''
+        可选
+        '''
+        pass
+
+    def delete(self, table_name, condition):
+        '''
+        删除data：根据select_index，将对应的记录enable=0
+        删除index：根据select_index，将节点的指针删除，然后循环删除
+        整个过程和插入差不多
+        '''
         pass
 
     def create_index(self):
-        pass
-
-    def delete_index(self):
         pass
 
     def grant(self):
@@ -411,15 +434,15 @@ class MiniSQL(object):
     def revoke(self):
         pass 
 
-#test:
-root = MiniSQL()
-root.reset_sys()
-column_list = {'a':'1s', 'b':'1s'}
-e = root.create_table('master', column_list, 'a')
-# print(e)
-for i in range(100):
-    value_list = ['a', 'a']
-    e = root.insert('master', value_list)
-    print(e)
-# print(root.sys_buffer)
-pass
+# #test:
+# root = MiniSQL()
+# root.reset_sys()
+# column_list = {'a':'1s', 'b':'1s'}
+# e = root.create_table('master', column_list, 'a')
+# # print(e)
+# for i in range(100):
+#     value_list = ['a', 'a']
+#     e = root.insert('master', value_list)
+#     print(e)
+# # print(root.sys_buffer)
+# pass
