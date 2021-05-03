@@ -25,7 +25,7 @@ class MiniSQL(object):
         self.current_user = None
         self.data_buffer = {}
         self.sys_buffer = {} #这个不是表
-        self.n = 4 #100个节点
+        self.n = 5 #100个节点
         self.m = 200 #字节数
 
         # 开始读取系统文件
@@ -257,7 +257,7 @@ class MiniSQL(object):
                 if current_node["is_leaf"] == True:
                     break
                 i = 0
-                while(index_value > current_node["index_value"][i]):
+                while i < len(current_node["index_value"]) and index_value > current_node["index_value"][i]:
                     i += 1
                 current_address = current_node["address"][i]  
         '''
@@ -315,11 +315,11 @@ class MiniSQL(object):
             self.write_index(split_address, split_node) 
             
             #更新迭代变量
+            index_value = split_node["index_value"][-1]
             address = split_address
             right_address = current_address
             current_address = current_node["parent"]
             current_node = self.read_index(current_address)
-            index_value = split_node["index_value"][0]
             
             #如果是根的分裂
             if(split_node["parent"] == right_address): 
@@ -336,9 +336,11 @@ class MiniSQL(object):
                 right_node = self.read_index(right_address)
                 right_node["parent"] = current_address
                 self.write_index(right_address, right_node)
-                right_node = self.read_index(address)
-                right_node["parent"] = current_address
-                self.write_index(address, right_node)
+                split_node = self.read_index(address)
+                if not split_node["is_leaf"]:
+                    split_node["index_value"].pop(-1) #如果不是叶子，还得删掉第一个搜索码
+                split_node["parent"] = current_address
+                self.write_index(address, split_node)
                 self.write_index(current_address, current_node)
 
         self.write_index("sys", self.sys_buffer) #调用结束后都需要写入
@@ -438,15 +440,17 @@ class MiniSQL(object):
     def revoke(self, user_name, table_name, privilege):
         pass 
 
-# #test:
-# root = MiniSQL()
-# root.reset_sys()
-# column_list = {'a':'1s', 'b':'1s'}
-# e = root.create_table('master', column_list, 'a')
-# # print(e)
-# for i in range(100):
-#     value_list = ['a', 'a']
-#     e = root.insert('master', value_list)
-#     print(e)
-# # print(root.sys_buffer)
-# pass
+#test:
+root = MiniSQL()
+root.reset_sys()
+column_list = {'a':'1s', 'b':'1s'}
+e = root.create_table('master', column_list, 'a')
+# print(e)
+for i in range(50):
+    value_list = []
+    value_list.append(str(i))
+    value_list.append('a')
+    e = root.insert('master', value_list)
+    print(e)
+# print(root.sys_buffer)
+pass

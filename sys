@@ -4,7 +4,8 @@
             "user_name": null,
             "table_name": "master",
             "wen": true,
-            "ren": true
+            "ren": true,
+            "is_owner": true
         }
     ],
     "user": [
@@ -15,613 +16,313 @@
     ],
     "log": [
         {
-            "time": "2021-04-30 22:46:51",
+            "time": "2021-05-03 12:43:50",
             "user_name": "sys",
             "operation": "reset system",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:51",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "create table",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:51",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:50",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:52",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:53",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
         },
         {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:53",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
-            "user_name": null,
-            "operation": "insert",
-            "result": 0
-        },
-        {
-            "time": "2021-04-30 22:46:54",
+            "time": "2021-05-03 12:43:51",
             "user_name": null,
             "operation": "insert",
             "result": 0
@@ -629,15 +330,15 @@
     ],
     "master": {
         "name": "master",
-        "data_num": 2,
-        "index_num": 93,
+        "data_num": 1,
+        "index_num": 37,
         "fmt": "1s1s",
         "column_list": [
             "a",
             "b"
         ],
         "index_list": {
-            "a": "master/index/89"
+            "a": "master/index/23"
         },
         "primary_key": "a"
     }

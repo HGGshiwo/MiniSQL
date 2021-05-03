@@ -96,6 +96,8 @@
 
 ​    向父节点插入
 
+
+
 #### select方法
 
 condion是一个中缀表达式
@@ -125,7 +127,6 @@ where column1 > 3 and colmn2 < 4
 更新sys_buffer
 
 更新data和index(如果删除的是索引所在的属性)
-
 
 
 
