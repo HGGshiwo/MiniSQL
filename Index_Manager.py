@@ -123,8 +123,10 @@ class index_manager(catalog_manager):
             
             #如果是根的分裂
             if split_node["parent"] == right_address:
-                catalog_manager.catalog_buffer[table_name]["index_num"] += 1
-                current_table = catalog_manager.catalog_buffer[table_name]
+                catalog_buffer = self.read_catalog()
+                catalog_buffer[table_name]["index_num"] += 1
+                self.write_catalog(catalog_buffer)
+                current_table = catalog_buffer[table_name]
                 current_address = 'db_files/index/' + table_name + '/' + str(current_table["index_num"]) + '.json'
                 current_node = {}
                 current_node["parent"] = current_address
@@ -132,7 +134,9 @@ class index_manager(catalog_manager):
                 current_node["index_value"] = []
                 current_node["address"] = []
                 current_node["address"].append(right_address)
-                catalog_manager.catalog_buffer[table_name]["index_list"][index] = current_address
+                catalog_buffer = self.read_catalog()
+                catalog_buffer[table_name]["index_list"][index] = current_address
+                self.write_catalog(catalog_buffer)
                 right_node = self.read_index(right_address)
                 right_node["parent"] = current_address
                 self.write_index(right_address, right_node)

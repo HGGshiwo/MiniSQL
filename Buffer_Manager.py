@@ -3,7 +3,6 @@ import os
 import json
 from enum import IntEnum
 from threading  import Lock
-import time
 
 class state_flag(IntEnum):
     todo = 1
@@ -142,7 +141,7 @@ class buffer_manager(main_buffer_manager):
             file.close()
 
         s.state_flag = state_flag.done
-        return self.data_buffer[address]
+        return main_buffer_manager.data_buffer[address]
     
     def write_index(self, address, node):
         '''

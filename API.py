@@ -6,7 +6,7 @@ from enum import IntEnum
 from Buffer_Manager import main_buffer_manager
 from Record_Manager import record_manager
 from Index_Manager import index_manager
-from Catalog_Manager import catalog_manager
+from Catalog_Manager import main_catalog_manager
 
 class error(IntEnum):
     no_error = 0
@@ -99,7 +99,8 @@ class api(record_manager, index_manager):
             self.write_log(op, result)
             return result  
         
-        current_table = catalog_manager.catalog_buffer[table_name]
+        catalog_buffer = self.read_catalog()
+        current_table = catalog_buffer[table_name]
         address = self.insert_data(table_name, value_list)
         
         for index in list(current_table["index_list"].keys()):
@@ -108,8 +109,11 @@ class api(record_manager, index_manager):
         result = error.no_error
         return result
 
-def main_thread():
+def buffer_thread():
     m = main_buffer_manager()
+
+def catalog_tread():
+    c = main_catalog_manager()
 
 def thread1():
     pass
@@ -127,7 +131,8 @@ def thread1():
     pass
 
 if __name__ == "__main__":
-    Thread(target = main_thread).start()
+    Thread(target = buffer_thread).start()
+    Thread(target = catalog_tread).start()
     Thread(target = thread1).start()
     time.sleep(200)
     main_buffer_manager.is_quit = True
