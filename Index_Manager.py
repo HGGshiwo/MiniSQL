@@ -1,3 +1,4 @@
+
 import os
 import copy
 from Catalog_Manager import catalog_manager
@@ -7,6 +8,7 @@ class index_manager(catalog_manager):
     主要是B+树索引的管理
     '''
     def __init__(self):
+        catalog_manager.__init__(self)
         self.max_num = 10 #这个要计算过
 
     def create_tree(self, table_name, index):
@@ -14,11 +16,12 @@ class index_manager(catalog_manager):
         if not os.path.isdir(address):
             os.makedirs(address)
         
-        catalog_manager.catalog_buffer[table_name]["index_num"] += 1 #增加一个节点
-        current_table = catalog_manager.catalog_buffer[table_name]
+        catalog_buffer = self.read_catalog()
+        catalog_buffer[table_name]["index_num"] += 1 #增加一个节点
+        current_table = catalog_buffer[table_name]
         address = address + '/' + str(current_table["index_num"]) + '.json'
-        catalog_manager.catalog_buffer[table_name]["index_list"][index] = address
-        self.write_index('db_files/catalog.json', catalog_manager.catalog_buffer)
+        catalog_buffer[table_name]["index_list"][index] = address
+        self.write_catalog(catalog_buffer)
          
     def delete_tree(self, table_name):
         pass
@@ -38,10 +41,11 @@ class index_manager(catalog_manager):
         address         数据文件所在位置
         '''
         #循环到叶子
-        current_table = catalog_manager.catalog_buffer[table_name]
+        catalog_buffer = self.read_catalog()
+        current_table = catalog_buffer[table_name]
         current_address = current_table["index_list"][index] #根的位置
         current_node = None
-        if(not os.path.exists(current_address)):#如果根为空，新建一个节点
+        if not os.path.exists(current_address):#如果根为空，新建一个节点
             current_node = {}
             current_node["address"] = []
             current_node["index_value"] = []
@@ -50,7 +54,7 @@ class index_manager(catalog_manager):
         else: #找到需要插入的节点   
             while True:
                 current_node = self.read_index(current_address)
-                if current_node["is_leaf"] == True:
+                if current_node["is_leaf"]:
                     break
                 i = 0
                 while i < len(current_node["index_value"]) and index_value > current_node["index_value"][i]:
@@ -70,7 +74,7 @@ class index_manager(catalog_manager):
         必须先更新sys_buffer，再更新current_table，进行查表           
         '''
         #开始插入
-        while(True):
+        while True:
             #找到节点中需要插入的位置
             i = 0
             while i < len(current_node["index_value"]):
@@ -86,8 +90,8 @@ class index_manager(catalog_manager):
                 break       
             
             #开始分裂，分裂出来的放在前面   
-            catalog_manager.catalog_buffer[table_name]["index_num"] += 1
-            current_table = catalog_manager.catalog_buffer[table_name]
+            catalog_buffer[table_name]["index_num"] += 1
+            current_table = catalog_buffer[table_name]
             split_node = {}
             split_node["address"] = []
             split_node["address"].extend(copy.copy(current_node["address"][0:self.max_num//2]))              
@@ -99,7 +103,7 @@ class index_manager(catalog_manager):
             current_node["index_value"] = current_node["index_value"][self.max_num//2:self.max_num+1]
             split_node["parent"] = current_node["parent"]
         
-            if(split_node["is_leaf"]): #如果是叶子
+            if split_node["is_leaf"]: #如果是叶子
                 split_node["address"].append(current_address)
             else:
                 for child_address in split_node["address"]:
@@ -118,7 +122,7 @@ class index_manager(catalog_manager):
             current_node = self.read_index(current_address)
             
             #如果是根的分裂
-            if(split_node["parent"] == right_address): 
+            if split_node["parent"] == right_address:
                 catalog_manager.catalog_buffer[table_name]["index_num"] += 1
                 current_table = catalog_manager.catalog_buffer[table_name]
                 current_address = 'db_files/index/' + table_name + '/' + str(current_table["index_num"]) + '.json'
@@ -139,5 +143,5 @@ class index_manager(catalog_manager):
                 self.write_index(address, split_node)
                 self.write_index(current_address, current_node)
 
-        self.write_index("db_files/catalog.json", catalog_manager.catalog_buffer) #调用结束后都需要写入
+        self.write_catalog(catalog_buffer) #调用结束后都需要写入
 

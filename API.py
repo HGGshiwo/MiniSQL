@@ -1,9 +1,12 @@
+import re
+from threading import Thread
+import time
 from enum import IntEnum 
-from Buffer_Manager import buffer_manager
+
+from Buffer_Manager import main_buffer_manager
 from Record_Manager import record_manager
 from Index_Manager import index_manager
 from Catalog_Manager import catalog_manager
-import re
 
 class error(IntEnum):
     no_error = 0
@@ -19,15 +22,14 @@ class operation(IntEnum):
     create_table = 0
     insert = 1
 
-
 class api(record_manager, index_manager):
     '''
     提供用户接口
     '''
     def __init__(self):
+        self.current_user = 'root'
         record_manager.__init__(self)
         index_manager.__init__(self)
-        self.current_user = 'root'
 
     def write_log(self, operation, result):
         pass
@@ -41,19 +43,20 @@ class api(record_manager, index_manager):
         '''
         op = operation.create_table
         #开始语法检查
-        for name in list(catalog_manager.catalog_buffer.keys()):
+        catalog_buffer = self.read_catalog()
+        for name in list(catalog_buffer.keys()):
             if table_name == name:
                 result = error.table_name_duplicate
                 self.write_log(op, result)
                 return result 
             
-            appreance = []
-            if name in appreance:
+            appearance = []
+            if name in appearance:
                 result = error.column_name_duplicate
                 self.write_log(op, result)
                 return result
             else:
-                appreance.append(name)
+                appearance.append(name)
         
         pa = re.compile(r'[^((\d*)(i|s|c|f)|(\?))]')
         if not (pa.match(fmt) == None): #匹配除了需要字符之外的字符
@@ -61,7 +64,7 @@ class api(record_manager, index_manager):
             self.write_log(op, result)
             return result
 
-        if(primary_key == None):
+        if primary_key == None:
             primary_key = column_list.keys[0]
         
         self.create_data(table_name, column_list, fmt, primary_key)
@@ -90,7 +93,8 @@ class api(record_manager, index_manager):
         result = None
         op = operation.insert
          # 插入前看表是否存在
-        if table_name not in catalog_manager.catalog_buffer.keys():
+        catalog_buffer = self.read_catalog()
+        if table_name not in catalog_buffer.keys():
             result = error.table_name_not_exists
             self.write_log(op, result)
             return result  
@@ -104,16 +108,31 @@ class api(record_manager, index_manager):
         result = error.no_error
         return result
 
-bm = buffer_manager()
-cm = catalog_manager()
-rm = record_manager()
-im = index_manager()
-a = api()
-column_list = {"index":True, "a":False}
-a.create_table('test', '1i1s', column_list, 'index')
-for i in range(100):
-    value_list = []
-    value_list.append(i)
-    value_list.append('a')
-    a.insert('test',value_list)
-pass
+def main_thread():
+    m = main_buffer_manager()
+
+def thread1():
+    pass
+    a = api()
+    column_list = {"index":True, "a":False}
+    a.create_table('test', '1i1s', column_list, 'index')
+    for i in range(100):
+        last_time = time.time()
+        value_list = []
+        value_list.append(i)
+        value_list.append('a')
+        e = a.insert('test',value_list)
+        print(str(i) + ":insert in " + str(time.time()-last_time))
+
+    pass
+
+if __name__ == "__main__":
+    Thread(target = main_thread).start()
+    Thread(target = thread1).start()
+    time.sleep(200)
+    main_buffer_manager.is_quit = True
+
+    pass
+
+
+

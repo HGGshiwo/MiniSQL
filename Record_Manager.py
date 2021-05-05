@@ -29,8 +29,9 @@ class record_manager(catalog_manager):
         table['primary_key'] = primary_key
         address = 'db_files/data/' + table_name 
         os.makedirs(address)  
-        catalog_manager.catalog_buffer[table_name] = table 
-        self.write_index('db_files/catalog.json', catalog_manager.catalog_buffer)
+        catalog_buffer = self.read_catalog()
+        catalog_buffer[table_name] = table 
+        self.write_catalog(catalog_buffer)
         
     def drop_data(self, table_name):
         '''
@@ -42,7 +43,8 @@ class record_manager(catalog_manager):
         '''
         插入一条数据数据
         '''        
-        current_table = self.catalog_buffer[table_name]
+        catalog_buffer = self.read_catalog()
+        current_table = catalog_buffer[table_name]
         column_list = list(current_table["column_list"].keys())
         data = {}
         for i, column in enumerate(column_list):
@@ -54,10 +56,10 @@ class record_manager(catalog_manager):
         fmt = fmt + '?'
         size = struct.calcsize(fmt)
         if(file_size + size > self.max_size):
-            catalog_manager.catalog_buffer[table_name]["data_num"] += 1
-            current_table = catalog_manager.catalog_buffer[table_name]
+            catalog_buffer[table_name]["data_num"] += 1
+            current_table = catalog_buffer[table_name]
             address ='db_files/data/' + table_name + '/' + str(current_table["data_num"]) + '.dat'
-            self.write_index('db_files/catalog.json', catalog_manager.catalog_buffer)
+            self.write_catalog(catalog_buffer)
         
         self.write_data(address, fmt, data)
         file_size = os.path.getsize(address) 
