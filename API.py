@@ -3,10 +3,9 @@ from threading import Thread
 import time
 from enum import IntEnum 
 
-from Buffer_Manager import main_buffer_manager
 from Record_Manager import record_manager
 from Index_Manager import index_manager
-from Catalog_Manager import main_catalog_manager
+from Thread_Manager import thread_manager
 
 
 class error(IntEnum):
@@ -29,8 +28,8 @@ class api(record_manager, index_manager):
     """
     提供用户接口
     """
-    def __init__(self):
-        self.current_user = 'root'
+    def __init__(self, user='root'):
+        self.current_user = user
         record_manager.__init__(self)
         index_manager.__init__(self)
 
@@ -100,8 +99,7 @@ class api(record_manager, index_manager):
             result = error.table_name_not_exists
             self.write_log(op, result)
             return result  
-        
-        catalog_buffer = self.read_catalog()
+
         current_table = catalog_buffer[table_name]
         address = self.insert_data(table_name, value_list)
         
@@ -112,33 +110,40 @@ class api(record_manager, index_manager):
         return result
 
 
-def buffer_thread():
-    m = main_buffer_manager()
+def main_thread():
+    t = thread_manager()
 
 
-def catalog_tread():
-    c = main_catalog_manager()
-
-
-def thread1():
+def thread_user1():
     pass
-    a = api()
+    a = api('user1')
     column_list = {"index": True, "a": False}
     last_time = time.time()
     a.create_table('test', '1i1s', column_list, 'index')
     print("create table in " + str(time.time()-last_time))
-    for i in range(100):
+    for i in range(0, 100, 2):
         last_time = time.time()
         value_list = [i, 'a']
         e = a.insert('test', value_list)
-        print(str(i) + ":insert in " + str(time.time()-last_time))
+        print('user1:insert ' + str(i) + ' in ' + str(time.time()-last_time))
+
+    pass
+
+def thread_user2():
+    time.sleep(1)
+    a = api('user2')
+    for i in range(1, 100, 2):
+        last_time = time.time()
+        value_list = [i, 'a']
+        e = a.insert('test', value_list)
+        print('user2:insert ' + str(i) + ' in ' + str(time.time()-last_time))
 
     pass
 
 
 if __name__ == "__main__":
-    Thread(target=buffer_thread).start()
-    Thread(target=catalog_tread).start()
-    Thread(target=thread1).start()
+    Thread(target=main_thread).start()
+    Thread(target=thread_user1).start()
+    Thread(target=thread_user2).start()
     time.sleep(200)
-    main_buffer_manager.is_quit = True
+    thread_manager.quit()

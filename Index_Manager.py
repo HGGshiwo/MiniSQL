@@ -9,7 +9,6 @@ class index_manager(catalog_manager):
     主要是B+树索引的管理
     """
     def __init__(self):
-        catalog_manager.__init__(self)
         self.max_num = 10  # 这个要计算过
 
     def create_tree(self, table_name, index):

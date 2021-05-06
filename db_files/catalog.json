@@ -2,7 +2,7 @@
     "test": {
         "name": "test",
         "data_num": 1,
-        "index_num": 24,
+        "index_num": 23,
         "fmt": "1i1s",
         "column_list": {
             "index": true,

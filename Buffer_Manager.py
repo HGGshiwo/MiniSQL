@@ -1,144 +1,138 @@
 import struct
 import os
 import json
-from enum import IntEnum
-from threading import Lock
+from Thread_Manager import thread_manager, request, state, priority
 
-
-class state(IntEnum):
-    todo = 1
-    doing = 2
-    done = 3
-
-
-class priority(IntEnum):
-    read = 1
-    write = 2
-
-
-class request(object):
-    def __init__(self, address, priority):
-        self.state = state.todo
-        self.address = address
-        self.priority = priority
-
-
-class main_buffer_manager(object):
-    """
-    buffer_manager的主进程
-    """
-    is_quit = False
-    data_buffer = {}
-    progress_list = []  # 正在进行中的任务
-    wait_list = []  # 正在等待中的任务
-    state_list = {}  # 被访问的文件状态
-    lock = Lock()
-
-    def __init__(self):
-        while len(main_buffer_manager.wait_list) != 0 or not main_buffer_manager.is_quit:
-            main_buffer_manager.lock.acquire()
-            # 将等待队列优先级较低的先进行
-            while len(main_buffer_manager.wait_list) != 0:
-                req = main_buffer_manager.wait_list[0]
-                if req.address not in main_buffer_manager.state_list.keys() \
-                        or (main_buffer_manager.state_list[req.address] == priority.read
-                            and req.priority == priority.read):
-                    req = main_buffer_manager.wait_list.pop(0)
-                    main_buffer_manager.progress_list.append(req)
-                    req.state = state.doing
-                    main_buffer_manager.state_list[req.address] = req.priority  # 更新文件列表
-                else:
-                    main_buffer_manager.state_list = {}  # 清空状态列表
-                    break
-            main_buffer_manager.lock.release()
-
-            # 将完成的出队列，由于只有主进程访问，不需要加锁
-            while len(main_buffer_manager.progress_list) != 0:
-                if main_buffer_manager.progress_list[0].state == state.done:
-                    main_buffer_manager.progress_list.pop(0)
-                pass
-
-
-class buffer_manager(main_buffer_manager):
+class buffer_manager(thread_manager):
     """
     提供了内存的读写
     """
+    data_buffer = {}
+    max_num = 32
+
     def __init__(self):
         pass
-    
-    def read_data(self, address, fmt, column_list=[], index_list=[]):
+
+    def load_buffer(self, address, node=None, data=None, fmt=None):
+        """
+        不加锁将数据或者节点从文件或者节点加载入缓存
+        """
+        if node is not None:
+            buffer = node  # 从节点加载入缓存
+        elif data is not None:
+            buffer = data  # 从数据加载入缓存
+        elif fmt is not None:  # 从数据文件加载入缓存
+            fmt = fmt + '?'
+            file = open(address, 'rb')
+            size = struct.calcsize(fmt)  # 一条记录的字节数
+            n = os.path.getsize(address) // size  # 文件中所有记录的数目
+            data_list = []
+
+            for i in range(n):
+                data_buffer = file.read(size)  # 猜测read后指针会自己移动
+                udata = struct.unpack(fmt, data_buffer)
+                if udata[-1]:  # 最后一个是bool类型
+                    data = {}
+                    for j in range(len(udata)-1):  # 对于每一个属性.str转为bytes
+                        data[j] = str(udata[j], encoding="utf-8") \
+                            if isinstance(udata[j], bytes) else udata[j]
+                    data_list.append(data)
+            buffer = data_list
+        else:  # 从节点文件加载入缓存
+            file = open(address, 'r')
+            buffer = json.load(file)
+            file.close()
+
+        if len(buffer_manager.data_buffer) == buffer_manager.max_num:
+            # 写入时如果已满，则删除缓存
+            min_base = None
+            min_times = int('inf')
+            for key in list(buffer_manager.data_buffer.keys()):
+                if buffer_manager.data_buffer[key]['times'] < min_times:
+                    min_times = buffer_manager.data_buffer[key]['times']
+                    min_base = key
+            buffer_manager.data_buffer.pop(min_base)
+            buffer_manager.data_buffer[address] = {'times': 1, 'data': buffer}
+        else:
+            if address not in buffer_manager.data_buffer.keys():
+                buffer_manager.data_buffer[address] = {}
+                buffer_manager.data_buffer[address]["times"] = 1
+            buffer_manager.data_buffer[address]['data'] = buffer
+            buffer_manager.data_buffer[address]['times'] += 1
+
+    def read_data(self, address, fmt, column_list):
         """
         按照指定格式从文件中读数据
+        column_list     列表，是列名的列表
+        address         字典，是{'base','offset'}
+        如果未指定offset，就是读取所有的address
         """
-        # 放入队列
-        req = request(address, priority.read)
-        main_buffer_manager.lock.acquire()
-        main_buffer_manager.wait_list.append(req)
-        main_buffer_manager.lock.release()
-        while req.state != state.doing:
-            pass
-
         if not os.path.exists(address):
             file = open(address, 'a+')
             file.close()
 
-        fmt = fmt + '?'
-        if address not in main_buffer_manager.data_buffer.keys():
-            file = open(address, 'rb') 
-            size = struct.calcsize(fmt)  # 一条记录的字节数
-            n = int(os.path.getsize(address)/size)  # 文件中所有记录的数目
-            data_list = []
-            
-            for i in range(n):
-                data_buffer = file.read(size)
-                udata = struct.unpack(fmt, data_buffer)
-                if udata[-1]:  # 最后一个是bool类型
-                    data = {}
-                    for j in range(len(column_list)):  # 对于每一个属性
-                        data[column_list[j]] = str(udata[j], encoding="utf-8") \
-                            if isinstance(udata[j], bytes) else udata[j]
-                    data_list.append(data)
-            main_buffer_manager.data_buffer[address] = data_list
-        
-        data_list = main_buffer_manager.data_buffer[address]      
-        ret = []
-        if len(index_list) == 0:
-            index_list = list(range(len(data_list)))
-            for index in index_list:
-                ret.append(data_list[index])
+        base = address["base"]
+        offset = address["offset"] if "offset" in address.keys() else None
 
+        # 申请读取
+        req = request(base, priority.read)
+        thread_manager.lock.acquire()
+        thread_manager.wait_list.append(req)
+        thread_manager.lock.release()
+        while req.state != state.doing:
+            pass
+
+        if base in buffer_manager.data_buffer.keys():
+            # 如果命中，直接读取
+            buffer_manager.data_buffer[base]['times'] += 1  # 不加锁是因为没人在读data时读这个
+        else:
+            # 如果没有被命中，申请加载缓存
+            req = request(base, priority.write)
+            thread_manager.lock.acquire()
+            thread_manager.wait_list.append(req)
+            thread_manager.lock.release()
+            while req.state != state.doing:
+                pass
+            self.load_buffer(fmt, base, column_list)
+
+        ret = buffer_manager.data_buffer[base]['data'] if offset is None \
+            else buffer_manager.data_buffer[base]['data'][offset]
         req.state = state.done
         return ret
 
     def write_data(self, address, fmt, data):
         """
-        按照指定格式在文件中写数据, 并将文件加入到data_buffer
-        address: 文件地址
+        按照指定格式在文件中增加数据, 并将文件加入到data_buffer
+        address: 字典
         fmt: 数据格式
-        data: 元组，要求字符格式
+        data: 列表
         """
-
-        if address not in main_buffer_manager.data_buffer.keys():
-            self.read_data(address, fmt, list(data.keys()))  # 一定要在锁之前进行，不然导致锁死
+        base = address["base"]
+        offset = address["offset"] if "offset" in address.keys() else None
 
         # 放入队列
-        req = request(address, priority.write)
-        main_buffer_manager.lock.acquire()
-        main_buffer_manager.wait_list.append(req)
-        main_buffer_manager.lock.release()
+        req = request(base, priority.write)
+        thread_manager.lock.acquire()
+        thread_manager.wait_list.append(req)
+        thread_manager.lock.release()
         while req.state != state.doing:
             pass
 
-        main_buffer_manager.data_buffer[address].append(data)
-        data[''] = True
-        data = list(data.values())
+        # 修改文件
+        data.append(True)
         for i in range(len(data)):
             data[i] = str.encode(data[i]) if isinstance(data[i], str) else data[i]
         data_buffer = struct.pack(fmt, *data)
-        file = open(address, 'ab+')
+        file = open(base, 'ab+')
         file.write(data_buffer)
         file.close()
 
+        # 修改缓存
+        if base not in buffer_manager.data_buffer.keys():
+            # 如果没有直接命中,加载缓存
+            self.load_buffer(address=base, fmt=fmt)
+            data.pop(-1)
+        buffer_manager.data_buffer[base]['data'].append(data)
         req.state = state.done
         return True
     
@@ -148,19 +142,18 @@ class buffer_manager(main_buffer_manager):
         """
         # 放入队列
         req = request(address, priority.read)
-        main_buffer_manager.lock.acquire()
-        main_buffer_manager.wait_list.append(req)
-        main_buffer_manager.lock.release()
+        thread_manager.lock.acquire()
+        thread_manager.wait_list.append(req)
+        thread_manager.lock.release()
         while req.state != state.doing:
             pass
 
-        if address not in main_buffer_manager.data_buffer.keys():
-            file = open(address, 'r')
-            main_buffer_manager.data_buffer[address] = json.load(file)
-            file.close()
+        if address not in buffer_manager.data_buffer.keys():
+            self.load_buffer(address)
 
+        ret = buffer_manager.data_buffer[address]["data"]
         req.state = state.done
-        return main_buffer_manager.data_buffer[address]
+        return ret
     
     def write_index(self, address, node):
         """
@@ -168,15 +161,16 @@ class buffer_manager(main_buffer_manager):
         """
         # 放入队列
         req = request(address, priority.write)
-        main_buffer_manager.lock.acquire()
-        main_buffer_manager.wait_list.append(req)
-        main_buffer_manager.lock.release()
+        thread_manager.lock.acquire()
+        thread_manager.wait_list.append(req)
+        thread_manager.lock.release()
         while req.state != state.doing:
             pass
-        
-        node_data_buffer = json.dumps(node, indent=4, ensure_ascii=False)
+
+        data_buffer = json.dumps(node, indent=4, ensure_ascii=False)
         file = open(address, 'w')
-        file.write(node_data_buffer)
+        file.write(data_buffer)
+        file.close()
+        self.load_buffer(address, node=node)
 
         req.state = state.done
-        file.close()
