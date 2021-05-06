@@ -121,7 +121,7 @@ def thread_user1():
     last_time = time.time()
     a.create_table('test', '1i1s', column_list, 'index')
     print("create table in " + str(time.time()-last_time))
-    for i in range(0, 100, 2):
+    for i in range(1, 100, 3):
         last_time = time.time()
         value_list = [i, 'a']
         e = a.insert('test', value_list)
@@ -132,11 +132,22 @@ def thread_user1():
 def thread_user2():
     time.sleep(1)
     a = api('user2')
-    for i in range(1, 100, 2):
+    for i in range(2, 100, 3):
         last_time = time.time()
         value_list = [i, 'a']
         e = a.insert('test', value_list)
         print('user2:insert ' + str(i) + ' in ' + str(time.time()-last_time))
+
+    pass
+
+def thread_user3():
+    time.sleep(1)
+    a = api('user3')
+    for i in range(3, 100, 3):
+        last_time = time.time()
+        value_list = [i, 'a']
+        e = a.insert('test', value_list)
+        print('user3:insert ' + str(i) + ' in ' + str(time.time()-last_time))
 
     pass
 
@@ -145,5 +156,6 @@ if __name__ == "__main__":
     Thread(target=main_thread).start()
     Thread(target=thread_user1).start()
     Thread(target=thread_user2).start()
+    Thread(target=thread_user3).start()
     time.sleep(200)
     thread_manager.quit()
