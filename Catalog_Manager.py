@@ -1,106 +1,83 @@
-from Thread_Manager import thread_manager, state, request, priority
-from Buffer_Manager import buffer_manager
+import copy
+
+from Buffer_Manager import Buffer_Manager
 
 
-class catalog_manager(buffer_manager):
+class Table(object):
+    def __init__(self, column_list, fmt_list, index_list, page_header, primary_key):
+        self.column_list = column_list
+        self.fmt_list = fmt_list
+        self.index_list = index_list
+        self.page_header = page_header
+        self.primary_key = primary_key
 
+
+class Column(object):
+    def __init__(self, is_unique, column_no):
+        self.is_unique = is_unique
+        self.column_no = column_no
+
+
+class Fmt_List(list):
+    @property
+    def fmt(self):
+        fmt = ''
+        for f in self:
+            fmt = fmt + f
+        return fmt
+
+
+class Catalog_Manager(Buffer_Manager):
     catalog_buffer = {}
     user_buffer = {}
     privilege_buffer = {}
 
     def __init__(self):
-        catalog_manager.catalog_buffer = self.read_index('db_files/catalog.json')
-        catalog_manager.user_buffer = self.read_index('db_files/user.json')
-        catalog_manager.privilege_buffer = self.read_index('db_files/privilege.json')
+        Buffer_Manager.__init__(self)
 
-    def read_catalog(self):
-        """
-        返回catalog_buffer
-        """
-        # 放入队列
-        req = request('db_files/catalog.json', priority.read)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-        catalog_buffer = catalog_manager.catalog_buffer
-        req.state = state.done
-        return catalog_buffer
+        catalog_buffer = self.read_json('catalog')
+        for table_name in catalog_buffer.keys():
+            column_list = catalog_buffer[table_name]['column_list']
+            fmt_list = Fmt_List(tuple(catalog_buffer[table_name]['fmt_list']))
+            index_list = catalog_buffer[table_name]['index_list']
+            page_header = catalog_buffer[table_name]['page_header']
+            primary_key = catalog_buffer[table_name]['primary_key']
+            c_list = {}
+            for column in column_list.keys():
+                c = Column(column_list[column]['is_unique'], column_list[column]['column_no'])
+                c_list[column] = c
+            table = Table(c_list, fmt_list, index_list, page_header, primary_key)
+            Catalog_Manager.catalog_buffer[table_name] = table
 
-    def write_catalog(self, catalog_buffer):
-        """
-        更新catalog_buffer
-        """
-        # 放入队列
-        req = request('db_files/catalog.json', priority.write)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-        catalog_manager.catalog_buffer = catalog_buffer
-        req.state = state.done
+        Catalog_Manager.user_buffer = self.read_json('user')
+        Catalog_Manager.privilege_buffer = self.read_json('privilege')
 
-    def read_user(self):
+    def sys_exit(self):
         """
-        返回user_buffer
+        相当于析构函数
         """
-        # 放入队列
-        req = request('db_files/user.json', priority.read)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-        user_buffer = catalog_manager.user_buffer
-        req.state = state.done
-        return user_buffer
+        catalog_buffer = {}
+        for table_name in Catalog_Manager.catalog_buffer.keys():
+            table = Catalog_Manager.catalog_buffer[table_name]
+            column_list = {}
+            for column_name in table.column_list.keys():
+                column = table.column_list[column_name]
+                column_list[column_name] = {'column_no': column.column_no, 'is_unique': column.is_unique}
+            fmt_list = list(tuple(table.fmt_list))
+            index_list = table.index_list
+            page_header = table.page_header
+            primary_key = table.primary_key
+            catalog_buffer[table_name] = \
+                {'column_list':column_list, 'fmt_list':fmt_list,
+                 'index_list':index_list, 'page_header':page_header, 'primary_key':primary_key}
+        self.write_json('catalog', catalog_buffer)
+        self.write_json('user', Catalog_Manager.user_buffer)
+        self.write_json('privilege', Catalog_Manager.privilege_buffer)
 
-    def write_user(self, user_buffer):
-        """
-        更新catalog_buffer
-        """
-        # 放入队列
-        req = request('db_files/user.json', priority.write)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-        catalog_manager.user_buffer = user_buffer
-        req.state = state.done
-
-    def read_privilege(self):
-        """
-        返回privilege_buffer
-        """
-        # 放入队列
-        req = request('db_files/privilege.json', priority.read)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-        privilege_buffer = catalog_manager.privilege_buffer
-        req.state = state.done
-        return privilege_buffer
-
-    def write_privilege(self, privilege_buffer):
-        """
-        更新catalog_buffer
-        """
-        # 放入队列
-        req = request('db_files/privilege.json', priority.write)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-        catalog_manager.privilege_buffer = privilege_buffer
-        req.state = state.done
-
-    def __del__(self):  # 必须在子进程里面写回，因为两个主进程是放在一起进行的
-        self.write_index('db_files/catalog.json', catalog_manager.catalog_buffer)
-        self.write_index('db_files/user.json', catalog_manager.user_buffer)
-        self.write_index('db_files/privilege.json', catalog_manager.privilege_buffer)
+        buffer = {}
+        buffer["del_header"] = Buffer_Manager.del_header
+        buffer['heap_top'] = Buffer_Manager.heap_top
+        self.write_json('buffer', buffer)
+        key_list = copy.copy(list(Buffer_Manager.buffer_pool.keys()))
+        for page_no in key_list:
+            self.unload_buffer(page_no)

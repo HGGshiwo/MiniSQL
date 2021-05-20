@@ -1,72 +1,46 @@
-import os
 import struct
-from Catalog_Manager import catalog_manager
+import sys
 
-class record_manager(catalog_manager):
-    '''
-    主要功能为实现数据文件的创建与删除（由表的定义与删除引起）记录的插入、删除与查找操作
-    '''
+from Catalog_Manager import Catalog_Manager
+from Buffer_Manager import Buffer_Manager
+
+
+class Record_Manager(Catalog_Manager):
+    """
+    主要是为了维护每一页中记录的链表
+    """
     def __init__(self):
         self.max_size = 4*1024
-    
-    def create_data(self, table_name, column_list, fmt, primary_key):
+
+    def insert_record(self, page_no, value_lists, index_no):
         """
-        table_name: 表的名称
-        column_list: dict{name, is_unique}
-        primary_key: 主键
+        在指定的页插入一条数据,如果需要分裂，返回False
+        page_no         需要插入的页
+        value_list      需要插入的值的列表
+        index_no        索引是value_list的第几个
         """
-        if(primary_key == None):
-            primary_key = column_list.keys[0]
-        
-        # 开始更新catalog_buffer[table_name]
-        table = {}
-        table['name'] = table_name
-        table['data_num'] = 1
-        table['index_num'] = 0
-        table['fmt'] = fmt
-        table['column_list'] = column_list
-        table['index_list'] = {primary_key: 'db_files/index/' + table_name + '/1.json'}
-        table['primary_key'] = primary_key
-        address = 'db_files/data/' + table_name
-        os.makedirs(address)
-        catalog_buffer = self.read_catalog()
-        catalog_buffer[table_name] = table 
-        self.write_catalog(catalog_buffer)
-        
-    def drop_data(self, table_name):
-        """
-        删除data文件
-        """
+        page = self.read_buffer(page_no)
+        if len(page.user_record) == 0:
+            value_list = value_lists.pop(0)
+            page.user_record.append(value_list)
+
+        for value_list in value_lists:
+            i = 0
+            while i < len(page.user_record):
+                if value_list[index_no] <= page.user_record[i][index_no]:
+                    break
+                i += 1
+            page.user_record.insert(i, value_list)
+        Buffer_Manager.buffer_pool[page_no] = page
+        if sys.getsizeof(page.page_header) + len(page.user_record) * struct.calcsize(page.fmt) > self.max_size:
+            return True
+        return False
+
+    def delete_record(self, table_name, condition):
         pass
 
-    def insert_data(self, table_name, value_list):
+    def select_record(self, table_name, condition):
         """
-        插入一条数据数据
-        value_list  列表，值的列表
+        在一个page中寻找record
         """
-        catalog_buffer = self.read_catalog()
-        current_table = catalog_buffer[table_name]
-
-        address = {}
-        address['base'] = 'db_files/data/' + table_name + '/' + str(current_table["data_num"]) + '.dat'
-        file_size = os.path.getsize(address['base']) if os.path.exists(address['base']) else 0
-        fmt = current_table["fmt"]
-        fmt = fmt + '?'
-        size = struct.calcsize(fmt)
-        address['offset'] = str(file_size//size)
-        if file_size + size > self.max_size:
-            catalog_buffer[table_name]["data_num"] += 1
-            current_table = catalog_buffer[table_name]
-            address['base'] = 'db_files/data/' + table_name + '/' + str(current_table["data_num"]) + '.dat'
-            address['offset'] = 0
-            self.write_catalog(catalog_buffer)
-        
-        self.write_data(address, fmt, value_list)
-
-        return address
-
-    def delete_data(self, table_name, condition):
-        pass
-
-    def select_data(self, table_name, condition):
         pass

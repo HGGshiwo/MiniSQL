@@ -1,14 +1,13 @@
 import re
-from threading import Thread
 import time
 from enum import IntEnum 
+from threading import Thread
+from Index_Manager import Index_Manager
+from Catalog_Manager import Catalog_Manager, Fmt_List, Column
+from Thread_Manager import Request, State
+from Buffer_Manager import Buffer_Manager
 
-from Record_Manager import record_manager
-from Index_Manager import index_manager
-from Thread_Manager import thread_manager
-
-
-class error(IntEnum):
+class Error(IntEnum):
     no_error = 0
     table_name_duplicate = 1
     table_name_not_exists = 2
@@ -19,64 +18,62 @@ class error(IntEnum):
     password_not_correct = 7
 
 
-class operation(IntEnum):
+class Operate(IntEnum):
     create_table = 0
     insert = 1
 
 
-class api(record_manager, index_manager):
+class Api(Index_Manager):
     """
     提供用户接口
     """
     def __init__(self, user='root'):
+        Index_Manager.__init__(self)
         self.current_user = user
-        record_manager.__init__(self)
-        index_manager.__init__(self)
 
-    def write_log(self, operation, result):
+    def write_log(self, operate, result):
         pass
 
-    def create_table(self, table_name, fmt, column_list, primary_key):
+    def create_table(self, table_name, fmt_list, column_list, primary_key):
         """
         table_name  表名称
         fmt         字符串格式
         column_list 字典
         primary_key 字符串
         """
-        op = operation.create_table
+        # with Request(table_name, State.read):
+        op = Operate.create_table
         # 开始语法检查
-        catalog_buffer = self.read_catalog()
+        catalog_buffer = Catalog_Manager.catalog_buffer
         for name in list(catalog_buffer.keys()):
             if table_name == name:
-                result = error.table_name_duplicate
+                result = Error.table_name_duplicate
                 self.write_log(op, result)
-                return result 
-            
+                return result
+
             appearance = []
             if name in appearance:
-                result = error.column_name_duplicate
+                result = Error.column_name_duplicate
                 self.write_log(op, result)
                 return result
             else:
                 appearance.append(name)
-        
+
         pa = re.compile(r'[^((\d*)(i|s|c|f)|(\?))]')
-        if not (pa.match(fmt) is None):  # 匹配除了需要字符之外的字符
-            result = error.type_not_support
+        if not (pa.match(fmt_list.fmt) is None):  # 匹配除了需要字符之外的字符
+            result = Error.type_not_support
             self.write_log(op, result)
             return result
 
         if primary_key is None:
             primary_key = column_list.keys[0]
-        
-        self.create_data(table_name, column_list, fmt, primary_key)
-        self.create_tree(table_name, primary_key)
-        
-        privilege_buffer = self.read_index("db_files/privilege.json")
+        self.new_table(table_name, column_list, fmt_list, primary_key)
+
+        privilege_buffer = self.read_json('privilege')
         privilege_buffer[self.current_user] = {table_name: {'wen': True, 'ren': True, 'is_owner': True}}
-        self.write_index('db_files/privilege.json', privilege_buffer)
+        self.write_json('privilege', privilege_buffer)
         # 写入log文件
-        result = error.no_error
+        result = Error.no_error
         self.write_log(op, result)
         return result
     
@@ -92,70 +89,90 @@ class api(record_manager, index_manager):
         """
         插入
         """
-        op = operation.insert
+        op = Operate.insert
         # 插入前看表是否存在
-        catalog_buffer = self.read_catalog()
+        catalog_buffer = Catalog_Manager.catalog_buffer
+
         if table_name not in catalog_buffer.keys():
-            result = error.table_name_not_exists
+            result = Error.table_name_not_exists
             self.write_log(op, result)
-            return result  
-
-        current_table = catalog_buffer[table_name]
-        address = self.insert_data(table_name, value_list)
-        
-        for i, index in enumerate(list(current_table["index_list"].keys())):
-            index_value = value_list[i]
-            self.insert_index(table_name, index, index_value, address)
-        result = error.no_error
-        return result
+            return result
+        primary_key = Catalog_Manager.catalog_buffer[table_name].primary_key
+        self.insert_index(value_list, table_name, primary_key)
+        index_list = Catalog_Manager.catalog_buffer[table_name].index_list
+        for index in list(index_list.keys()):
+            if index == primary_key:
+                continue
+            self.insert_index(value_list, table_name, index)
 
 
-def main_thread():
-    t = thread_manager()
-
-
-def thread_user1():
+# def test1():
+#     """
+#     测试点
+#     1.建表
+#     2.插入少量顺序记录
+#     3.记录写入文件
+#     4.文件读取
+#     """
+#     pass
+#     a = Api('user1')
+#     name_list = ['index', 'a']
+#     unique = [True, False]
+#     column_list = {}
+#     for i in range(len(name_list)):
+#         column = Column(unique[i], i)
+#         column_list[name_list[i]] = column
+#
+#     last_time = time.time()
+#     fmt_list = Fmt_List(('1i','1s'))
+#
+#     a.create_table('test', fmt_list, column_list, 'index')
+#     print("create table in " + str(time.time()-last_time))
+#
+#     for i in range(100):
+#         last_time = time.time()
+#         value_list = [i, 'a']
+#         e = a.insert('test', value_list)
+#         print('user1:insert ' + str(i) + ' in ' + str(time.time()-last_time))
+#     pool = Buffer_Manager.buffer_pool
+#     a.unload_buffer(0)
+#     pool = Buffer_Manager.buffer_pool
+#     page = a.read_buffer(0)
+#     pass
+def test2():
+    """
+    测试点
+    1.测试分裂节点
+    """
     pass
-    a = api('user1')
-    column_list = {"index": True, "a": False}
+    a = Api('user1')
+    a.max_size = 20
+    name_list = ['index', 'a']
+    unique = [True, False]
+    column_list = {}
+    for i in range(len(name_list)):
+        column = Column(unique[i], i)
+        column_list[name_list[i]] = column
+
     last_time = time.time()
-    a.create_table('test', '1i1s', column_list, 'index')
+    fmt_list = Fmt_List(('1i','1s'))
+
+    a.create_table('test', fmt_list, column_list, 'index')
     print("create table in " + str(time.time()-last_time))
-    for i in range(1, 100, 3):
+
+    for i in range(100):
         last_time = time.time()
         value_list = [i, 'a']
         e = a.insert('test', value_list)
         print('user1:insert ' + str(i) + ' in ' + str(time.time()-last_time))
 
-    pass
-
-def thread_user2():
-    time.sleep(1)
-    a = api('user2')
-    for i in range(2, 100, 3):
-        last_time = time.time()
-        value_list = [i, 'a']
-        e = a.insert('test', value_list)
-        print('user2:insert ' + str(i) + ' in ' + str(time.time()-last_time))
-
-    pass
-
-def thread_user3():
-    time.sleep(1)
-    a = api('user3')
-    for i in range(3, 100, 3):
-        last_time = time.time()
-        value_list = [i, 'a']
-        e = a.insert('test', value_list)
-        print('user3:insert ' + str(i) + ' in ' + str(time.time()-last_time))
-
+    pool = Buffer_Manager.buffer_pool
     pass
 
 
 if __name__ == "__main__":
-    Thread(target=main_thread).start()
-    Thread(target=thread_user1).start()
-    Thread(target=thread_user2).start()
-    Thread(target=thread_user3).start()
-    time.sleep(200)
-    thread_manager.quit()
+    catalog_manager = Catalog_Manager()
+    # Thread(target=thread_user1).start()
+    test2()
+    # test_buffer()
+    catalog_manager.sys_exit()

@@ -1,176 +1,195 @@
 import struct
-import os
 import json
-from Thread_Manager import thread_manager, request, state, priority
+from Thread_Manager import Thread_Manager
 
-class buffer_manager(thread_manager):
+
+class Page(object):
     """
-    提供了内存的读写
+    一页
     """
-    data_buffer = {}
-    max_num = 32
+    def __init__(self, next_page=None, current_page=None, parent=None, fmt_size=None, index_no=None,
+                 is_leaf=None, fmt=None, user_record=None, page_header=None, acquire_times=1):
+        self.acquire_times = acquire_times
+        if page_header is not None:
+            self.next_page = page_header[0]
+            self.current_page = page_header[1]
+            self.parent = page_header[2]
+            self.fmt_size = page_header[3]
+            self.index_no = page_header[4]
+            self.is_leaf = page_header[5]
+            self.fmt = page_header[6]
+            self.user_record = user_record
+        else:
+            self.next_page = next_page
+            self.current_page = current_page
+            self.parent = parent
+            self.fmt_size = fmt_size
+            self.index_no = index_no
+            self.is_leaf = is_leaf
+            self.fmt = fmt
+            self.user_record = user_record
+
+    @property
+    def page_header(self):
+        page_header = [self.next_page, self.current_page, self.parent, self.fmt_size,
+                       self.index_no, self.is_leaf, self.fmt]
+        return tuple(page_header)
+
+
+class Buffer_Manager(Thread_Manager):
+    """
+    主要是寻找新的空间，管理缓存池
+    """
+    buffer_pool = {}
+    pool_size = 1024  # 缓冲池最大页数量
+    del_header = None  # 被删除的页的头节点
+    heap_top = None  # 页的头节点，需要加锁访问
 
     def __init__(self):
-        pass
+        Thread_Manager.__init__(self)
+        if Buffer_Manager.del_header is None:
+            with open('db_files/buffer.json', 'r') as file:
+                buffer = json.load(file)
+            Buffer_Manager.del_header = buffer["del_header"]
+            Buffer_Manager.heap_top = buffer['heap_top']
 
-    def load_buffer(self, address, node=None, data=None, fmt=None):
+    def load_buffer(self, page_no):
         """
-        不加锁将数据或者节点从文件或者节点加载入缓存
+        将文件加载入缓存页，不提供锁
         """
-        if node is not None:
-            buffer = node  # 从节点加载入缓存
-        elif data is not None:
-            buffer = data  # 从数据加载入缓存
-        elif fmt is not None:  # 从数据文件加载入缓存
-            fmt = fmt + '?'
-            file = open(address, 'rb')
-            size = struct.calcsize(fmt)  # 一条记录的字节数
-            n = os.path.getsize(address) // size  # 文件中所有记录的数目
-            data_list = []
+        address = 'db_files/' + str(page_no) + '.dat'
+        with open(address, 'rb') as file:
+            # 首先解码出除了fmt以外的部分
+            header_fmt = '5i?'
+            header_buffer = file.read(struct.calcsize(header_fmt))
+            page_header = list(struct.unpack_from(header_fmt, header_buffer, 0))
+            # 解码除了fmt_size之后，可以解码fmt
+            fmt_size = struct.calcsize(str(page_header[3])+'s')
+            fmt_buffer = file.read(fmt_size)
+            fmt = struct.unpack_from(str(page_header[3]) + 's', fmt_buffer, 0)
+            page_header.append(fmt[0])
+            user_buffer = file.read()
 
-            for i in range(n):
-                data_buffer = file.read(size)  # 猜测read后指针会自己移动
-                udata = struct.unpack(fmt, data_buffer)
-                if udata[-1]:  # 最后一个是bool类型
-                    data = {}
-                    for j in range(len(udata)-1):  # 对于每一个属性.str转为bytes
-                        data[j] = str(udata[j], encoding="utf-8") \
-                            if isinstance(udata[j], bytes) else udata[j]
-                    data_list.append(data)
-            buffer = data_list
-        else:  # 从节点文件加载入缓存
-            file = open(address, 'r')
-            buffer = json.load(file)
-            file.close()
+        records = struct.iter_unpack(fmt[0], user_buffer)
+        user_record = []
+        for record in records:
+            record = to_string(record)
+            user_record.append(record)
+        page = Page(page_header=page_header, user_record=user_record)
+        # 写入时如果已满，则删除缓存
+        if len(Buffer_Manager.buffer_pool) == Buffer_Manager.pool_size:
+            self.unload_buffer()
 
-        if len(buffer_manager.data_buffer) == buffer_manager.max_num:
-            # 写入时如果已满，则删除缓存
-            min_base = None
+        Buffer_Manager.buffer_pool[page_no] = page
+
+    def unload_buffer(self, page_no = None):
+        """
+        将一个缓存删除并写回文件，不提供锁
+        """
+        # 删除一个最不常访问的
+        if page_no is None:
             min_times = int('inf')
-            for key in list(buffer_manager.data_buffer.keys()):
-                if buffer_manager.data_buffer[key]['times'] < min_times:
-                    min_times = buffer_manager.data_buffer[key]['times']
-                    min_base = key
-            buffer_manager.data_buffer.pop(min_base)
-            buffer_manager.data_buffer[address] = {'times': 1, 'data': buffer}
-        else:
-            if address not in buffer_manager.data_buffer.keys():
-                buffer_manager.data_buffer[address] = {}
-                buffer_manager.data_buffer[address]["times"] = 1
-            buffer_manager.data_buffer[address]['data'] = buffer
-            buffer_manager.data_buffer[address]['times'] += 1
+            for p in list(Buffer_Manager.buffer_pool.keys()):
+                if Buffer_Manager.buffer_pool[p]['acquire_times'] < min_times:
+                    min_times = Buffer_Manager.buffer_pool[p]['acquire_times']
+                    page_no = p
 
-    def read_data(self, address, fmt, column_list):
+        # 删除一个指定的
+        page = Buffer_Manager.buffer_pool.pop(page_no)
+        header_fmt = '5i?' + str(page.fmt_size) + 's'
+        header_size = struct.calcsize(header_fmt)
+        header_buffer = bytearray(header_size)
+        page_header = page.page_header
+        page_header = to_bytes(page_header)
+        struct.pack_into(header_fmt, header_buffer, 0, *page_header)
+        size = struct.calcsize(page.fmt)
+        user_buffer = bytearray(size * len(page.user_record))
+        for i,record in enumerate(page.user_record):
+            record = to_bytes(record)
+            struct.pack_into(page.fmt, user_buffer, i*size, *record)
+        print(user_buffer)
+        address = 'db_files/' + str(page_no) + '.dat'
+        with open(address, 'wb') as file:
+            file.write(header_buffer)
+            file.write(user_buffer)
+
+    def read_buffer(self, page_no):
         """
-        按照指定格式从文件中读数据
-        column_list     列表，是列名的列表
-        address         字典，是{'base','offset'}
-        如果未指定offset，就是读取所有的address
+        对应页数的读取
         """
-        if not os.path.exists(address):
-            file = open(address, 'a+')
-            file.close()
-
-        base = address["base"]
-        offset = address["offset"] if "offset" in address.keys() else None
-
-        # 申请读取
-        req = request(base, priority.read)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-
-        if base in buffer_manager.data_buffer.keys():
-            # 如果命中，直接读取
-            buffer_manager.data_buffer[base]['times'] += 1  # 不加锁是因为没人在读data时读这个
+        if page_no in Buffer_Manager.buffer_pool.keys():
+            buffer = Buffer_Manager.buffer_pool[page_no]
+            Buffer_Manager.buffer_pool[page_no].acquire_times += 1
         else:
-            # 如果没有被命中，申请加载缓存
-            req = request(base, priority.write)
-            thread_manager.lock.acquire()
-            thread_manager.wait_list.append(req)
-            thread_manager.lock.release()
-            while req.state != state.doing:
+            buffer = None
+
+        if buffer is None:
+            self.load_buffer(page_no)
+            buffer = Buffer_Manager.buffer_pool[page_no]
+
+        return buffer
+
+    def new_buffer(self, page = None):
+        """
+        开辟一个新的文件，并返回page_no
+        """
+        page_no = Buffer_Manager.del_header
+        # 如果delete_list是空，则在heap中开辟
+        if page_no == -1:
+            Buffer_Manager.heap_top += 1
+            page_no = Buffer_Manager.heap_top
+            address = 'db_files/' + str(page_no) + '.dat'
+            with open(address, 'a'):
                 pass
-            self.load_buffer(fmt, base, column_list)
+        # 如果delete_list非空
+        else:
+            if page_no not in Buffer_Manager.buffer_pool.keys():
+                self.load_buffer(page_no)
+            Buffer_Manager.del_header = Buffer_Manager.buffer_pool[page_no].next_page
+        if page is not None:
+            Buffer_Manager.buffer_pool[page_no].page = page
+        return page_no
 
-        ret = buffer_manager.data_buffer[base]['data'] if offset is None \
-            else buffer_manager.data_buffer[base]['data'][offset]
-        req.state = state.done
-        return ret
-
-    def write_data(self, address, fmt, data):
+    def delete_buffer(self, page_no):
         """
-        按照指定格式在文件中增加数据, 并将文件加入到data_buffer
-        address: 字典
-        fmt: 数据格式
-        data: 列表
+        将一个缓存删除，文件从链表删除，不提供锁
         """
-        base = address["base"]
-        offset = address["offset"] if "offset" in address.keys() else None
+        page = Page(next_page=Buffer_Manager.del_header, current_page=page_no, parent=-1,
+                    fmt_size=0, is_leaf=True, fmt='', user_record=[])
+        Buffer_Manager.del_header = page_no
+        Buffer_Manager.buffer_pool[page_no] = page
+        self.unload_buffer(page_no)
 
-        # 放入队列
-        req = request(base, priority.write)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
-
-        # 修改文件
-        data.append(True)
-        for i in range(len(data)):
-            data[i] = str.encode(data[i]) if isinstance(data[i], str) else data[i]
-        data_buffer = struct.pack(fmt, *data)
-        file = open(base, 'ab+')
-        file.write(data_buffer)
-        file.close()
-
-        # 修改缓存
-        if base not in buffer_manager.data_buffer.keys():
-            # 如果没有直接命中,加载缓存
-            self.load_buffer(address=base, fmt=fmt)
-            data.pop(-1)
-        buffer_manager.data_buffer[base]['data'].append(data)
-        req.state = state.done
-        return True
-    
-    def read_index(self, address):
+    def read_json(self, json_name):
         """
-        从文件中读取一个字典
+        读json文件，只发生在catalog类初始时，实例化对象时候不会读文件，注意不入缓存池
         """
-        # 放入队列
-        req = request(address, priority.read)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
+        address = 'db_files/' + json_name + '.json'
+        with open(address, 'r') as file:
+            buffer = json.load(file)
+        return buffer
 
-        if address not in buffer_manager.data_buffer.keys():
-            self.load_buffer(address)
-
-        ret = buffer_manager.data_buffer[address]["data"]
-        req.state = state.done
-        return ret
-    
-    def write_index(self, address, node):
+    def write_json(self, json_name, buffer):
         """
-        将一个字典写入文件，字典永远不会超出，因为树会检查，字典是覆盖
+        写json文件，只发生在系统退出前，实例化对象时不会读文件
         """
-        # 放入队列
-        req = request(address, priority.write)
-        thread_manager.lock.acquire()
-        thread_manager.wait_list.append(req)
-        thread_manager.lock.release()
-        while req.state != state.doing:
-            pass
+        buffer = json.dumps(buffer, indent=4, ensure_ascii=False)
+        address = 'db_files/' + json_name + '.json'
+        with open(address, 'w') as file:
+            file.write(buffer)
 
-        data_buffer = json.dumps(node, indent=4, ensure_ascii=False)
-        file = open(address, 'w')
-        file.write(data_buffer)
-        file.close()
-        self.load_buffer(address, node=node)
 
-        req.state = state.done
+def to_bytes(value):
+    value = list(value)
+    for i in range(len(value)):
+        if isinstance(value[i], str):
+            value[i] = str.encode(value[i])
+    return value
+
+
+def to_string(value):
+    value = list(value)
+    for i in range(len(value)):  # 对于每一个属性.str转为bytes
+        if isinstance(value[i], bytes):
+            value[i] = str(value[i], encoding="utf-8")
+    return value
