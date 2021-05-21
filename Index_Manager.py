@@ -2,6 +2,7 @@ from Catalog_Manager import Catalog_Manager, Table
 from Buffer_Manager import Buffer_Manager, Page
 from Record_Manager import Record_Manager
 
+
 class Index_Manager(Record_Manager):
     """
     主要是B+树索引的管理
@@ -17,7 +18,7 @@ class Index_Manager(Record_Manager):
         index_no = column_list[primary_key].column_no
 
         # 修改catalog_manager
-        index_list = {primary_key:-1}
+        index_list = {primary_key: -1}
         table = Table(column_list, fmt_list, index_list,
                       -1, primary_key=primary_key)
         Catalog_Manager.catalog_buffer[table_name] = table
@@ -59,12 +60,11 @@ class Index_Manager(Record_Manager):
         """
         从叶子插入，然后保持树
         table_name         当前操作的表
-        index              插入的记录的索引，是主键还是其他索引
-        value_list         需要插入的值
-        root               根的page_no
-        index_no           index在value_list第几个地方
-        index_fmt          非叶子的解码格式，如果是主码，则是主码+i，如果是二级索引，则是索引+主码
+        index              当前的索引是哪个
+        value_list         一条记录
         """
+        # if 2 in Buffer_Manager.buffer_pool.keys() and Buffer_Manager.buffer_pool[2].current_page != 2:
+        #     print(value_list)
         catalog_buffer = Catalog_Manager.catalog_buffer[table_name]
         page_no = catalog_buffer.index_list[index]
         index_no = catalog_buffer.column_list[index].column_no
@@ -72,34 +72,46 @@ class Index_Manager(Record_Manager):
         page = self.read_buffer(page_no)
         while not page.is_leaf:
             i = 0
-            while value_list[index_no] < page.user_record[i][0] and i < len(page.user_record) - 1:
+            while i < len(page.user_record) - 1 and value_list[index_no] > page.user_record[i][0]:
                 i += 1
             page_no = page.user_record[i][1]
+            page = self.read_buffer(page_no)
         value_list = [value_list]
         # 用主键插入
         is_full = self.insert_record(page_no, value_list, index_no)
         while is_full:
             n = len(page.user_record)
-            user_record = page.user_record[n//2:-1]
+            user_record = page.user_record[0:n//2]
             right_page_no = self.new_buffer()  # left是原来的
             left_page = Page(right_page_no, page.current_page, page.parent, page.fmt_size, page.index_no, page.is_leaf,
-                              page.fmt, user_record, page_header=None, acquire_times=page.acquire_times)
-            user_record = page.user_record[0:n//2]
+                             page.fmt, user_record, page_header=None, acquire_times=page.acquire_times)
+            user_record = page.user_record[n//2:]
             right_page = Page(page.next_page, right_page_no, page.parent, page.fmt_size, page.index_no, page.is_leaf,
-                              page.fmt, user_record, page_header=None, acquire_times=page.acquire_times)
+                              page.fmt, user_record, page_header=None, acquire_times=1)
             Buffer_Manager.buffer_pool[page_no] = left_page
             Buffer_Manager.buffer_pool[right_page_no] = right_page
+            # 当分裂的时候，如果新页是非叶节点，把新页的孩子指向新页
             if not right_page.is_leaf:
                 for record in right_page.user_record:
                     self.read_buffer(record[1])
                     Buffer_Manager.buffer_pool[record[1]].parent = right_page_no
+            # 如果是根的分裂，创建一个新根
             if page.parent == -1:
-                self.new_root(table_name, is_leaf=False, index=index, fmt=index_fmt, index_no=index_no)
+                left_page_no = page_no
+                page_no = self.new_root(table_name, is_leaf=False, index=index, fmt=index_fmt, index_no=index_no)
+                Buffer_Manager.buffer_pool[left_page_no].parent = page_no
+                Buffer_Manager.buffer_pool[right_page_no].parent = page_no
+                # 把两个孩子插入到新根中
+                left_value_list = [left_page.user_record[0][index_no], left_page.current_page]
+                right_value_list = [right_page.user_record[0][index_no], right_page.current_page]
+                value_lists = [left_value_list, right_value_list]
+                is_full = self.insert_record(page_no, value_lists, 0)
             else:
                 page_no = page.parent
-
-            value_lists = [left_page.user_record[0], right_page.user_record[0]]
-            is_full = self.insert_record(page_no, value_lists, 0)
+                value_lists = [[right_page.user_record[0][index_no], right_page.current_page]]
+                is_full = self.insert_record(page_no, value_lists, 0)
+            page = self.read_buffer(page_no)
+        pass
 
     def delete_root(self):
         pass

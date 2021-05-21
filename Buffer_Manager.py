@@ -107,7 +107,6 @@ class Buffer_Manager(Thread_Manager):
         for i,record in enumerate(page.user_record):
             record = to_bytes(record)
             struct.pack_into(page.fmt, user_buffer, i*size, *record)
-        print(user_buffer)
         address = 'db_files/' + str(page_no) + '.dat'
         with open(address, 'wb') as file:
             file.write(header_buffer)

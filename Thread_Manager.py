@@ -18,23 +18,21 @@ class Request(object):
         self.table_name = table_name
 
     def __enter__(self):
-        # 当出现一个请求时，将其加入等待列表
-        if self.table_name is not None:
-            while True:
-                Thread_Manager.lock.acquire()
-                if self.table_name not in Thread_Manager.state_list \
-                        or Thread_Manager.state_list[self.table_name] == State.free:
-                    Thread_Manager.state_list[self.table_name] = self.state
-                    break
-                else:
-                    Thread_Manager.lock.release()
-        else:
+        # 当出现一个请求时，检查状态列表并阻塞，直到允许进行
+        while True:
             Thread_Manager.lock.acquire()
+            if self.table_name not in Thread_Manager.state_list \
+                    or Thread_Manager.state_list[self.table_name] == State.free:
+                Thread_Manager.state_list[self.table_name] = self.state
+                Thread_Manager.lock.release()
+                break
+            Thread_Manager.lock.release()
+
+
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.table_name is not None:
-            # 修改状态，释放资源
-            Thread_Manager.state_list[self.table_name] = State.free
+        Thread_Manager.lock.acquire()
+        Thread_Manager.state_list[self.table_name] = State.free
         Thread_Manager.lock.release()
 
 
