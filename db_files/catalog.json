@@ -1,2 +1,21 @@
 {
+    "test": {
+        "column_list": [
+            "i",
+            "a"
+        ],
+        "fmt_list": [
+            "i",
+            "1s"
+        ],
+        "index_list": {
+            "i": 0
+        },
+        "unique_list": [
+            true,
+            false
+        ],
+        "page_header": 0,
+        "primary_key": "i"
+    }
 }
