@@ -67,15 +67,48 @@ def new_root(share, is_leaf, fmt, index_offset):
     return page_no
 
 
-def delete_tree(share, table_name):
-    pass
-
-
-def select_page(share, table_name, condition=None):
+def delete_tree(self, table_name,condition=None):
     """
-    查找page
+    删除所搜寻的索引
     """
-    pass
+    page_no=Catalog_Manager.catalog_buffer[table_name].page_header
+    page=self.read_buffer(page_no)
+    while not page.isleaf:#如果当前的page不是叶节点，那么循环到叶节点
+        #page=page.child，即循环到孩子节点
+        #i = 0
+        #while i < len(page.user_record) - 1:
+        #    i += 1
+        page_no = page.user_record[0][1]#到最左边的一页
+        page = self.read_buffer(page_no)
+    #现在循环到了最左侧的叶子节点，现在在叶子节点当中查询。
+    while(page.next_page):#不是最右边的那一页
+        user_record=page.user_record
+        for item in user_record:
+            if true(item,condition):#如果item符合condition
+                item=None
+
+def select_page(self, table_name, condition=None):
+    """
+    查找page**********************************
+    从根节点开始，如果符合条件那么返回来符合条件的索引；如果不符合条件那么继续进行
+    """
+    page_no=Catalog_Manager.catalog_buffer[table_name].page_header
+    page=self.read_buffer(page_no)
+    while not page.isleaf:#如果当前的page不是叶节点，那么循环到叶节点
+        #page=page.child，即循环到孩子节点
+        #i = 0
+        #while i < len(page.user_record) - 1:
+        #    i += 1
+        page_no = page.user_record[0][1]#到最左边的一页
+        page = self.read_buffer(page_no)
+    #现在循环到了最左侧的叶子节点，现在在叶子节点当中查询。
+    indexlist=[]
+    while(page.next_page):#不是最右边的那一页
+        user_record=page.user_record
+        for item in user_record:
+            if true(item,condition):#如果item符合condition
+                indexlist.append(item)
+    return indexlist
 
 
 def check(page):
