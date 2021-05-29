@@ -27,3 +27,29 @@ def delete_record(share, page_no, offset):
     buffer_pool[page_no].pop(offset)
     share.buffer_pool = buffer_pool
     share.pin_list.remove(page_no)
+
+# def delete_record(self, table_name, condition):
+#     """
+#     删除record
+#     """
+#     page_no=Index_Manager.select_page(self,table_name,condition)#首先应用索引找到page_no
+#     page=self.read_buffer(page_no)#读出page
+#     if len(page.user_record)==0:#如果读到的一页里面没有任何数据
+#         return None
+#     for record in range(0,len(page.user_record)):
+#         if true(record,condition):#如果条件成立
+#             page.user_record.remove(record)
+
+# def select_record(self, page_no,table_name, condition):#线性查找
+#     """
+#     在一个page中寻找record
+#     """
+#     page_no=Index_Manager.select_page(self,table_name,condition)#首先应用索引找到page_no
+#     page=self.read_buffer(page_no)#读出page
+#     if len(page.user_record)==0:#如果读到的一页里面没有任何数据
+#         return None
+#     recordlist=[]
+#     for record in range(0,len(page.user_record)):
+#         if true(record,condition):#如果条件成立
+#             recordlist.append(record)
+#     return recordlist
