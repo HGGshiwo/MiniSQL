@@ -2,6 +2,7 @@ import re
 import time
 from enum import IntEnum
 from IndexManager import insert_index, new_table
+from CatalogManager import Table
 
 
 class Error(IntEnum):
@@ -39,7 +40,7 @@ def api(conn, share, user='root'):
         elif command == 'quit':
             conn.close()
             print('successfully quit ' + user)
-            break
+            return
         else:
             pass
 
@@ -107,18 +108,16 @@ def insert(share, table_name, value_list):
     插入
     """
     op = Operate.insert
-    # 插入前看表是否存在
-    catalog_info = share.catalog_info
+    # 插入前看表是否存在0
+    for i in share.catalog_info.keys():
+        if len(share.catalog_info[i]) != 0 and share.catalog_info[i][Table.table_name] == table_name:
+            primary_key = share.catalog_info[i][Table.primary_key]
+            insert_index(share, value_list, table_name, primary_key)
+            index_list = share.catalog_info[i][Table.index_list]
+            for index in list(index_list.keys()):
+                if index == primary_key:
+                    continue
+                insert_index(share, value_list, table_name, index)
+            return
 
-    if table_name not in catalog_info.keys():
-        result = Error.table_name_not_exists
-        write_log(op, result)
-        print(result)
-        return result
-    primary_key = catalog_info[table_name]['primary_key']
-    insert_index(share, value_list, table_name, primary_key)
-    index_list = catalog_info[table_name]['index_list']
-    for index in list(index_list.keys()):
-        if index == primary_key:
-            continue
-        insert_index(share, value_list, table_name, index)
+    raise RuntimeError('表名为 ' + table_name + ' 的表不存在.')

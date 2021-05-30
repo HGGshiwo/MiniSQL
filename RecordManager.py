@@ -1,14 +1,15 @@
-from BufferManager import read_buffer
+from BufferManager import Page
 
 
 def insert_record(page, value_lists, index_no):
     """
-    在指定的页插入一条数据,如果需要分裂，返回False
-    page_no         需要插入的页
-    value_list      需要插入的值的列表
-    index_no        索引是value_list的第几个
+    在指定的页插入一条数据
+    :param page: 列表，需要插入的页
+    :param value_lists: 列表，需要插入的value
+    :param index_no: 索引在value_list的第几个位置
+    :return: 返回插入后的page，列表
     """
-    user_record = page['user_record']
+    user_record = page[Page.user_record]
     if len(user_record) == 0:
         value_list = value_lists.pop()
         user_record.append(value_list)
@@ -17,16 +18,9 @@ def insert_record(page, value_lists, index_no):
             if i == len(user_record) or value_list[index_no] <= user_record[i][index_no]:
                 user_record.insert(i, value_list)
                 break
-    page['user_record'] = user_record
+    page[Page.user_record] = user_record
     return page
 
-
-def delete_record(share, page_no, offset):
-    read_buffer(share, page_no)
-    buffer_pool = share.buffer_pool
-    buffer_pool[page_no].pop(offset)
-    share.buffer_pool = buffer_pool
-    share.pin_list.remove(page_no)
 
 # def delete_record(self, table_name, condition):
 #     """
@@ -53,3 +47,16 @@ def delete_record(share, page_no, offset):
 #         if true(record,condition):#如果条件成立
 #             recordlist.append(record)
 #     return recordlist
+
+
+def delete_record(page, offset):
+    """
+    删除一条记录
+    :param page:删除的记录所在的页
+    :param offset: 删除记录的位置
+    :return: page
+    """
+    user_record = page[Page.user_record]
+    del user_record[offset]
+    page[Page.user_record] = user_record
+    return page
