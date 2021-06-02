@@ -42,9 +42,11 @@ def pin_page(share, page_no):
     """
     pid = os.getpid()
     share.request_pool[pid] = page_no
+    if page_no not in share.pin_list:
+        share.request_pool.pop(pid)
     while pid in share.request_pool.keys():
         pass  # 阻塞
-
+    share.pin_list.append(page_no)
 
 def unpin_page(share, page_no):
     """

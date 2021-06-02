@@ -21,9 +21,9 @@ class Operate(IntEnum):
     insert = 1
 
 
-def api(conn, share, user='root'):
+def api(share, user='root'):
     while True:
-        command = conn.recv()
+        command = input()
         if command == 'create':
             last_time = time.time()
             create_table(share, user, 'test', ['i', '1s'], ['i', 'a'], [True, False], 'i')
@@ -38,7 +38,6 @@ def api(conn, share, user='root'):
         elif command == 'select':
             pass
         elif command == 'quit':
-            conn.close()
             print('successfully quit ' + user)
             return
         else:
@@ -121,3 +120,7 @@ def insert(share, table_name, value_list):
             return
 
     raise RuntimeError('表名为 ' + table_name + ' 的表不存在.')
+
+
+
+
