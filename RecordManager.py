@@ -98,3 +98,5 @@ def true(record,table_name,condition):#判断record是否满足其中的table符
                             return nowtable_columnlist[nowcol]<=value
                         elif op=="!=":
                             return nowtable_columnlist[nowcol]!=value
+    else:
+        return True  #r如果没有条件，那么返回true
