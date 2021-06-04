@@ -2,7 +2,7 @@ import struct
 from CatalogManager import CatalogManager
 from BufferManager import Off
 from enum import IntEnum
-
+import re
 
 class RecOff(IntEnum):
     valid = 0
@@ -83,25 +83,40 @@ class RecordManager(CatalogManager):
             p = struct.unpack_from('i', self.pool.buf, offset + p + RecOff.next_addr)[0]
         pass
 
-    def select_record(self, addr, condition):  # 线性查找
-        """
-        在一个page中寻找record
-        """
-        offset = addr << 12
-        fmt_size = struct.unpack_from('i', self.pool.buf, offset + Off.fmt_size)[0]
-        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, offset + Off.fmt)[0]
-        record_list = []
-        p = struct.unpack_from('i', self.pool.buf, offset + Off.header)[0]  # p是指针
-        while p != 0:
-            r = struct.unpack_from(fmt, self.pool.buf, offset + p + RecOff.record)
-            if true(r, condition):  # 如果条件成立
-                record_list.append(r)
-                break
-            p = struct.unpack_from('i', self.pool.buf, offset + p + RecOff.next_addr)[0]
+def true(record,table_name,condition):#判断record是否满足其中的table符合condition，并输出符合的cols，比如true(record,sname,student,age>18)就是搜索record里面的student表当中符合age>18的，输出sname列。
+    nowtable=None
+    if table_name in record:#如果这个record记录中存在这个table
+        nowtable=record[table_name]
+        #现在进入到record的table_name列，例如{"table1":{"name", "data_num", "index_num","fmt","column_list","index_list","primary_key"}"
+        #table2":{"name", "data_num", "index_num","fmt","column_list","index_list","primary_key"}}为record，table1为table_name，
+        # 那么现在nowtable为{"name", "data_num", "index_num","fmt","column_list","index_list","primary_key"}
+    else:
+        return False
+        #否则，这个record里面不存在这个table，那么就找不到符合条件的值
+    nowtable_columnlist=nowtable["column_list"]
+    if condition is not None:
+        exps=condition.split('and')#将不同条件分隔开
+        if len(exps)==1:#如果只有一个条件
+            exp=exps[0].strip()
+            match=re.match(r'^([A-Za-z0-9_]+)\s*([<>=]+)\s*(.+)$', exp, re.S)
 
-        return record_list
-
-
-def true(record, condition):
-    return True
-    pass
+            if match and len(match.groups())==3:
+                nowcol,op,value=match.groups()
+                '''
+                例如age>18,nowcol为"age"，op为">",value为"18"
+                '''
+                value=eval(value)#将"18"转换为18，字符串转换为数组
+                for col in nowtable_columnlist:
+                    if nowcol==col:#如果当前的列是要寻找的列
+                        if(op=="="):
+                            return nowtable_columnlist[nowcol]==value
+                        elif op==">":
+                            return nowtable_columnlist[nowcol]>value
+                        elif op=="<":
+                            return nowtable_columnlist[nowcol]<value
+                        elif op==">=":
+                            return nowtable_columnlist[nowcol]>=value
+                        elif op=="<=":
+                            return nowtable_columnlist[nowcol]<=value
+                        elif op=="!=":
+                            return nowtable_columnlist[nowcol]!=value
