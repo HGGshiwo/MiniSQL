@@ -1,9 +1,11 @@
 import re
+import struct
 import time
 from enum import IntEnum
-from IndexManager import insert_index, new_table
-from CatalogManager import Table
-
+from IndexManager import IndexManager
+from BufferManager import Off
+from IndexManager import TabOff
+from RecordManager import RecOff
 
 class Error(IntEnum):
     no_error = 0
@@ -21,103 +23,89 @@ class Operate(IntEnum):
     insert = 1
 
 
-def api(conn, share, user='root'):
-    while True:
-        command = conn.recv()
-        if command == 'create':
-            last_time = time.time()
-            create_table(share, user, 'test', ['i', '1s'], ['i', 'a'], [True, False], 'i')
-            print('successfully create table in ' + str(time.time() - last_time))
-        elif command == 'insert':
-            last_time = time.time()
-            for i in range(100):
-                insert(share, 'test', [i, 'a'])
-            print('successfully insert in ' + str(time.time() - last_time))
-        elif command == 'delete':
-            pass
-        elif command == 'select':
-            pass
-        elif command == 'quit':
-            conn.close()
-            print('successfully quit ' + user)
-            return
-        else:
-            pass
+class Api(IndexManager):
+    def __init__(self):
+        IndexManager.__init__(self)
 
+    def print_info(self):
+        print("pool", end='\t\t')
+        print(self.pool.buf)
+        print('addr_list', end='\t\t')
+        print(self.addr_list)
+        print('occupy_list', end='\t\t')
+        print(self.occupy_list)
+        print('buffer_info', end='\t\t')
+        print(self.buffer_info)
+        print('catalog_list', end='\t')
+        print(self.catalog_list)
 
-def write_log(operate, result):
-    pass
+    def print_header(self, addr):
+        print('------------------addr ' + str(addr) + ' info------------------')
+        current_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.current_page)[0]
+        print("current_page\t" + str(current_page))
+        next_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
+        print("next_page\t\t" + str(next_page))
+        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+        print("header\t\t\t" + str(header))
+        is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
+        print("is_leaf\t\t\t" + str(is_leaf))
+        previous_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.previous_page)[0]
+        print("previous_page\t" + str(previous_page))
+        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
+        print("fmt_size\t\t" + str(fmt_size))
+        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
+        print('fmt\t\t\t\t' + str(fmt, encoding='utf8'))
 
+    def print_record(self, addr):
+        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
+        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
+        p = header
+        while p != 0:
+            pre = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.pre_addr)[0]
+            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+            next = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
+            print("record:\tpre:" + str(pre) + '\tnext:' + str(next) + '\tr:', end='')
+            print(r)
+            p = next
 
-def create_table(share, user, table_name, fmt_list, column_list, unique_list, primary_key):
-    """
-    table_name  表名称
-    fmt_list     列表，每个字符串格式
-    column_list 列表，属性的名称
-    unique_list 列表，属性是否唯一
-    primary_key 字符串
-    """
-    op = Operate.create_table
-    # 开始语法检查
-    catalog_buffer = share.catalog_info
-    for name in list(catalog_buffer.keys()):
-        if table_name == name:
-            result = Error.table_name_duplicate
-            write_log(op, result)
-            return result
+    def create_table(self, table_name, primary_key, table_info):
+        """
+        table_name  表名称
+        fmt_list     列表，每个字符串格式
+        column_list 列表，属性的名称
+        unique_list 列表，属性是否唯一
+        primary_key 字符串
+        """
+        self.new_table(table_name, primary_key, table_info)
 
-        appearance = []
-        if name in appearance:
-            result = Error.column_name_duplicate
-            write_log(op, result)
-            return result
-        else:
-            appearance.append(name)
+    def delete(self, table_name, condition):
+        """
+        删除data：根据select_index，将对应的记录enable=0
+        删除index：根据select_index，将节点的指针删除，然后循环删除
+        整个过程和插入差不多
+        """
+        pass
 
-    pa = re.compile(r'\d*(i+|s+|c+|f+|\?+)')
-    for fmt in fmt_list:
-        if pa.match(fmt) is None:
-            result = Error.type_not_support
-            write_log(op, result)
-            return result
+    def insert(self, table_name, value_list):
+        """
+        插入
+        """
+        op = Operate.insert
+        # 插入前看表是否存在0
 
-    if primary_key is None:
-        primary_key = column_list[0]
-    new_table(share, table_name, column_list, fmt_list, unique_list, primary_key)
-
-    # privilege_info = read_json('privilege')
-    # privilege_info.append({'table_name': table_name, 'user': user, 'wen': True, 'ren': True, 'is_owner': True})
-    # share.privilege_info = privilege_info
-    # 写入log文件
-    result = Error.no_error
-    write_log(op, result)
-    return result
-
-
-def delete(share, table_name, condition):
-    """
-    删除data：根据select_index，将对应的记录enable=0
-    删除index：根据select_index，将节点的指针删除，然后循环删除
-    整个过程和插入差不多
-    """
-    pass
-
-
-def insert(share, table_name, value_list):
-    """
-    插入
-    """
-    op = Operate.insert
-    # 插入前看表是否存在0
-    for i in share.catalog_info.keys():
-        if len(share.catalog_info[i]) != 0 and share.catalog_info[i][Table.table_name] == table_name:
-            primary_key = share.catalog_info[i][Table.primary_key]
-            insert_index(share, value_list, table_name, primary_key)
-            index_list = share.catalog_info[i][Table.index_list]
-            for index in list(index_list.keys()):
-                if index == primary_key:
-                    continue
-                insert_index(share, value_list, table_name, index)
+        if self.catalog_list.count(table_name) != 0:
+            table = self.table_list[table_name]
+            primary_key = table[TabOff.primary_key]
+            addr = self.insert_index(value_list, table_name, primary_key)
+            catalog_num = (len(table)-2) // 4
+            for i in range(0, catalog_num):
+                if i != primary_key and table[(i << 2) + 5] != -1:
+                    index_value = [addr, value_list[i]]
+                    self.insert_index(index_value, table_name, i)
             return
 
-    raise RuntimeError('表名为 ' + table_name + ' 的表不存在.')
+        raise RuntimeError('表名为 ' + table_name + ' 的表不存在.')
+
+    def exit(self):
+        pass
