@@ -1,5 +1,6 @@
-from BufferManager import pin_page, unpin_page
 from enum import IntEnum
+from BufferManager import BufferManager
+import os
 
 
 class Table(IntEnum):
@@ -12,34 +13,25 @@ class Table(IntEnum):
     table_name = 6
 
 
-def read_catalog(share, table_name):
-    """
-    读table_name对应的info，提供锁
-    :param share:
-    :param table_name:
-    :return: table信息的列表
-    """
-    pin_page(share, 'catalog.' + table_name)
-    for i in share.catalog_info.keys():
-        if share.catalog_info[i][Table.table_name] == table_name:
-            table_info = share.catalog_info[i]
-            return list(table_info)
+class CatalogManager(BufferManager):
+    def __init__(self):
+        BufferManager.__init__(self)
+
+    def pin_catalog(self, table_name):
+        pid = os.getpid()
+        index = self.catalog_list.index(table_name)
+        while self.catalog_occupy_list[index] != pid:
+            if self.catalog_occupy_list[index] == -1:
+                self.catalog_occupy_list[index] = pid
+
+    def unpin_catalog(self, table_name):
+        index = self.catalog_list.index(table_name)
+        self.catalog_occupy_list[index] = -1
 
 
-def fresh_catalog(share, table_name, table):
-    for i in share.catalog_info.keys():
-        if len(share.catalog_info[i]) != 0 and share.catalog_info[i][Table.table_name] == table_name:
-            del share.catalog_info[i][0:]
-            share.catalog_info[i].extend(table)
-            unpin_page(share, 'catalog.'+ table_name)
-            return
+    def pin_user(self, user_name):
+        pass
 
-    for i in share.catalog_info.keys():
-        if len(share.catalog_info[i]) == 0:
-            share.catalog_info[i].extend(table)
-            unpin_page(share, 'catalog.' + table_name)
-            return
-
-    unpin_page(share, 'catalog.' + table_name)
-    raise RuntimeError('表数量已达到上限100，无法建表',)
+    def unpin_user(self, user_name):
+        pass
 
