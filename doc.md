@@ -1,166 +1,85 @@
-# 数据库简介
+## 1 Page和Buffer操作
 
-使用了shared_memory共享数据，性能获得巨大提升！
+### 1.1 在buffer_pool中获取page的例子
 
-但是shared_memory限制了存储方式，只能按照bytearray存放，需要进行select或者比较时再进行解码。
+比如想获得page_no对应的page,使用```read_buffer(share, page_no)```，返回一个列表。此时该page_no被pin住。
 
-bytearray的存储，int占四个byte，所以int -1在bytearray中的形式是：0xff 0xff 0xff 0xff，占4个字节
+因此在unpin前不要重复调用read_buffer
 
-char占1个字节，所以char r在bytearray中的形式是 0xb'r'，就是r的acsicc码
+另一种方式：```index = find_page(share, page_no)```，然后使用share.buffer_pool[index]进行访问
 
-有关并行：和无并行本质上没有区别，唯一对我们的影响是：如上所言，限制了存储的形式。
 
-因此，我们设计了一套较为巧妙的方式，能够将数据存放起来。
-
-# 数据操作
-
-## 1 Page
-
-page是一页，按照一个bytearray的形式存储。前面部分是page_header，即页信息。后面是用户数据。
-
-### 1.1 在pool中获取page的例子
-
-```python
-if self.addr_list.count(page_no) == 0:  # 检查page_no是否在addr_list中
-	self.load_page(page_no)  # 如果不在，则从文件中拷贝进来
-index = self.addr_list.index(page_no)  # 获得page_no在addr_list的第几个元素
-addr = index << 12 # page_no所在page的真实位置是index*4096
-# addr就是page的第一个byte所在的下标
-```
 
 ### 1.2 解析page的例子
 
-page是一段bytearray，其中的解析方式如下：
+Page一个列表下标的含义。具体定义见BufferManager
 
-| 位置         | 名称              | 含义                                 | 宽度     | 不存在时 |
-| ------------ | ----------------- | ------------------------------------ | -------- | -------- |
-| 0:4          | current_page      | 当前页号                             | 4        | -1       |
-| 4:8          | next_page         | 后一页                               | 4        | -1       |
-| 8:12         | header            | 第一条记录的位置                     | 4        | 0        |
-| 12:16        | space_header      | 第一条删除记录的位置(暂时不用)       | 4        | 0        |
-| 16:17        | ==is_leaf==       | 是否是叶子                           | 1        |          |
-| 17:21        | ==previous_page== | 前一页                               | 4        | -1       |
-| 21:25        | ==parent==        | 父页                                 | 4        | -1       |
-| 25:29        | ==index_offset==  | 索引在一条记录的第几个位置           | 4        |          |
-| 29:33        | ==fmt_size==      | fmt所占字节数目                      | 4        |          |
-| 33:k         | ==fmt==           | 字符串，表示解码格式，不包括两个指针 | fmt_size |          |
-| k:k+fmt_size | user_record       | 用户记录                             |          | 0        |
-| ...          |                   |                                      |          |          |
+| 名称          | 含义             |
+| ------------- | ---------------- |
+| next_page     | 下一页的位置     |
+| current_page  | 当前页的位置     |
+| previous_page | 前一页的位置     |
+| parent        | 父页的位置       |
+| fmt_size      | fmt大小          |
+| index_offset  | 索引在第几个位置 |
+| is_leaf       | 是否是叶子       |
+| fmt           | 一段字符串       |
+| is_delete     | 是否被删除       |
+| is_change     | 是否被修改       |
+| user_record   | 列表的数据       |
 
-注意，python中表示的方式是[a:b]的含义是a到b-1，因此a[0:1]表示的就是a[0]，但是不能写成a[0]
+比如获得page后，想获得next_page，则用``next_page = page[Page.next_page]``
 
-### 1.3 对page_no的指定位赋值
-
-```python
-# 假如想要对page的next_page进行赋值, 注意next_page在addr开始后的几个byte之后。
-struct.pack_into('i', self.pool.buf, addr+Off.next_page, next_page)
-# pack_into将一个数据转为byte写入内存
-# i表示数据的格式是int
-# self.pool.buf是写入的内存
-# addr+Off.next_page是偏移位置。addr是页的位置，Off.next_page是next_page相对页的位置
-# next_page 想要写入的数据
-```
-
-### 1.4读取page_no的指定位
-
-```python
-next_page = struct.unpack_from('i', self.pool.buf, addr + Off.next_page)
-```
+注意，如果next_page或者其他不存在，那么默认值是-1
 
 
 
-### 1.5 解析record的例子
+### 1.3 写回page的例子
 
-用户记录也是bytearray，是page的一段(slice)。确定一条记录的信息需要3个地址：```addr + p + RecOff.record```
+假如page存在buffer_pool中，且被pin住，则通过find_page(share, page_no)计算index
 
-addr是页所在的地址，详见1.1
+用```fresh_buffer(share, page, index)```写回
 
-p是记录相对于页所在的位置，第一条记录并不在0处，需要从page_header中获取。
+写回后自动unpin，所以不要读一次，写回多次
 
-RecOff.record是真实记录的偏移，它之前还有vaild，curreant_addr，next_addr，pre_addr
 
-解析方式如下：
-
-| 偏移位置     | 名称          | 含义             | 宽度 | 不存在时 |
-| ------------ | ------------- | ---------------- | ---- | -------- |
-| 0:1          | valid         | 记录是否有效     | 1    | 0        |
-| 1:5          | current_addr  | 当前记录的地址   | 4    | 0        |
-| 5:9          | next_addr     | 下一条记录的地址 | 4    | 0        |
-| 9:13         | previous_addr | 上一条记录的地址 | 4    | 0        |
-| 13:size(fmt) | record        | 用户记录         | ...  | 0        |
-
-如果不存在，统一赋值为0
-
-遍历page_no的所有record
-
-```python
-# 首先，从page_header中读出header
-# addr是page_no的地址，计算方法见1
-p = struct.unpack_from('i', self.pool.buf, addr + Off.header)[0] # p就是对于page来说，第一条记录的位置
-while p != 0:
-    # pool--page--record--value，value是真实的数据，record包含value和next_addr, pre_addr
-    r = struct.unpack_from(fmt, self.pool.buf, addr + p + RecOff.record) 
-    if r[index] > value_list[index]:
-		# do something
-    p = struct.unpack_from('i', self.pool.buf, addr + p + RecOff.next_addr)[0]
-```
-
-如果插入或者删除，不仅需要在物理空间将其vaild进行赋值，还需要维护链表
 
 ## 2 Table操作
 
 ### 2.1 获取表信息的例子
 
-在self.table_list[table_name]中获取
+如果想获取一个表名是table_name的表的信息，使用```read_catalog(share, table_name)```获取。
+
+得到的是一个列表table_info
+
+注意，读table_info后，该表的信息就被pin住，因此在unpin前不要重复使用```read_catalog```，会导致卡住。
 
 ### 2.2 解析表信息的例子
 
-每一个表都单独使用一个列表。
+table_info是一个列表，记录表的信息，第一项是column_list，可以用table[Table.column_list]来访问，顺序见下表
 
-一个table列表的信息：
-
-| 位置 | 名称        | 含义                                                |
-| ---- | ----------- | --------------------------------------------------- |
-| 0    | primary_key | primary_key所在的位置下标                           |
-| 1    | leaf_header | 第一个叶子节点所在的地方                            |
-| 2    | name        | 列的名称，字符串                                    |
-| 3    | fmt         | 字符串，第一个元素的解析方式                        |
-| 4    | unique      | bool，第一个元素是否是unique                        |
-| 5    | index_page  | int，第一个元素索引所在的根节点，如果不是索引则为-1 |
-| 6    | name        |                                                     |
-| 7    | fmt         |                                                     |
-| 8    | unique      |                                                     |
-| 9    | index_page  |                                                     |
-| ...  | ....        |                                                     |
-
-所以table的长度总是2+4*k，k是属性个数
+| 名称b       | 含义                              |
+| ----------- | --------------------------------- |
+| column_list | 列名的列表                        |
+| fmt_list    | 列解码方式的列表                  |
+| index_list  | 字典{index:page_no}，记录根的位置 |
+| unique_list | unique的列所在的位置              |
+| page_header | int 第一个数据页的位置            |
+| primary_key | 主键                              |
 
 ### 2.3 修改表信息的例子
 
-直接像数组一样读或者赋值即可，每一个位置的含义见上表
+当修改一个表之后，使用```fresh_catalog(share, table_name, table)```写入share的catalog_info中。table是一个列表，和上面获取的一样。
+
+一次只允许修改一个表的内容。
+
+修改以后，调用```unpin(share, 'catalog.'+ table_name)```把表的信息解锁
 
 
 
-# 3.共享资源
+==尽量使用读写函数进行读写,另，buffer_pool的索引已经不是page_no，因此不能用buffer_pool[page_no]进行访问==
 
-共享资源全部是成员变量，可以用self进行访问
 
-| 共享的资源名称      | 含义                                                         | 操作者       |
-| ------------------- | ------------------------------------------------------------ | ------------ |
-| addr_list           | 第i个页放的page_no是多少，如果被删除，则修改为-1             | load, unload |
-| dirty_list          | 第i个页是否是脏页，默认被pin过就是脏页，需要自己把它修改为False | pin          |
-| refer_list          | 第i个页的引用次数                                            | free         |
-| occupy_list         | 第i个页被哪个进程占用，无则是-1                              | pin, unpin   |
-| pool                | 一段bytearray                                                | 任意         |
-| buffer_info         | 物理文件的位置，0是pid, 1是heap_top, 2是del_header           |              |
-| catalog_list        | 记录所有表的名称                                             |              |
-| catalog_occupy_list | catalog被占用的情况                                          |              |
-| table_name1         | 一个表的信息                                                 |              |
-| table_name2         | 一个表的信息                                                 |              |
-| ...                 | ...                                                          |              |
-| user_name1          | 一个用户的信息                                               |              |
-| user_name2          | 一个用户的信息                                               |              |
-| ...                 | ...                                                          |              |
 
 
 

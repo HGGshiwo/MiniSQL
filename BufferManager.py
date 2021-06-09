@@ -2,196 +2,89 @@ import struct
 import json
 import os
 from enum import IntEnum
-from multiprocessing import shared_memory
 
 
-class Off(IntEnum):
-    current_page = 0
-    next_page = 4
-    header = 8
-    space_header = 12
-    is_leaf = 16
-    previous_page = 17
-    parent = 21
-    index_offset = 25
-    fmt_size = 29
-    fmt = 33
+class Page(IntEnum):
+    next_page = 0
+    current_page = 1
+    previous_page = 2
+    parent = 3
+    fmt_size = 4
+    index_offset = 5
+    is_leaf = 6
+    fmt = 7
+    is_delete = 8
+    is_change = 9
+    reference = 10
+    user_record = 11
 
 
-class CatOff(IntEnum):
-    #  下面是catalog_info中使用的
-    pid = 0
-    heap_top = 1
-    del_header = 2
-
-
-class BufferManager(object):
+def fresh_buffer(share, page, index):
     """
-    内存管理类
+    在index对应的页修改为page, 取消page_no的锁
+    :param share:
+    :param page:
+    :param index: 写入的地址
+    :return: None
     """
-    def __init__(self):
-        try:
-            self.pool = shared_memory.SharedMemory(create=False, name='pool')
-            self.addr_list = shared_memory.ShareableList(sequence=None, name='addr_list')
-            self.dirty_list = shared_memory.ShareableList(sequence=None, name='dirty_list')
-            self.refer_list = shared_memory.ShareableList(sequence=None, name='refer_list')
-            self.occupy_list = shared_memory.ShareableList(sequence=None, name='occupy_list')
-            self.buffer_info = shared_memory.ShareableList(sequence=None, name='buffer')
-            self.catalog_list = shared_memory.ShareableList(sequence=None, name='catalog_list')
-            self.catalog_occupy_list = shared_memory.ShareableList(sequence=None, name='catalog_occupy_list')
-            self.table_list = {}
-            for table in self.catalog_list:
-                self.table_list[table] = shared_memory.ShareableList(sequence=None, name=table)
-        except FileNotFoundError:
-            s = [-1] * 255  # 缓存空间的页数
-            self.pool = shared_memory.SharedMemory(create=True, name='pool', size=1044480)
-            self.addr_list = shared_memory.ShareableList(sequence=s, name='addr_list')
-            self.dirty_list = shared_memory.ShareableList(sequence=s, name='dirty_list')
-            self.refer_list = shared_memory.ShareableList(sequence=s, name='refer_list')
-            self.occupy_list = shared_memory.ShareableList(sequence=s, name='occupy_list')
-            buffer_info = read_json('buffer')
-            self.buffer_info = buffer_info['0']
-            catalog_info = read_json('catalog')
-            self.catalog_list = shared_memory.ShareableList(sequence=catalog_info['catalog_list'], name='catalog_list')
-            self.table_list = {}
-            for table in self.catalog_list:
-                if table == -1:
-                    continue
-                self.table_list[table] = shared_memory.ShareableList(sequence=catalog_info[table], name=table)
-            t = [-1]*1024  # 最多建1024张表
-            self.catalog_occupy_list = shared_memory.ShareableList(sequence=t, name='catalog_occupy_list')
+    page_no = page[Page.current_page]
+    del share.buffer_pool[index][0:]
+    share.buffer_pool[index].extend(page)
+    unpin_page(share, page_no)
 
-    def pin_page(self, page_no):
-        """
-        将指定的进程id加入到需求列表，并阻塞，直到该page被pin住
-        :param page_no: 页号
-        :return: None
-        """
-        index = self.addr_list.index(page_no)
-        pid = os.getpid()
-        while self.occupy_list[index] != pid:
-            if self.occupy_list[index] == -1:
-                self.occupy_list[index] = pid
-        pass
-        self.dirty_list[index] = True
-        self.refer_list[index] += 1
 
-    def unpin_page(self, page_no):
-        """
-        将一页移出
-        :param page_no:
-        :return:
-        """
-        index = self.addr_list.index(page_no)
-        self.occupy_list[index] = -1
+def pin_page(share, page_no):
+    """
+    将指定的进程id加入到需求列表，并阻塞，直到该page被pin住
+    :param share: 环境变量
+    :param page_no: 页号
+    :return: None
+    """
+    pid = os.getpid()
+    share.request_pool[pid] = page_no
+    while pid in share.request_pool.keys():
+        pass  # 阻塞
 
-    def pin_buffer(self):
-        """
-        pin buffer_info，即pin住物理文件的空闲位置
-        :return:
-        """
-        pid = os.getpid()
-        while self.buffer_info[CatOff.pid] != pid:
-            if self.buffer_info[CatOff.pid] == -1:
-                self.buffer_info[CatOff.pid] = pid
 
-    def unpin_buffer(self):
-        self.buffer_info[CatOff.pid] = -1
+def unpin_page(share, page_no):
+    """
+    将一页从pin_list中移出
+    :param share:
+    :param page_no:
+    :return:
+    """
+    share.pin_list.remove(page_no)
 
-    def find_space(self, page_no):
-        """
-        为page_no在pool申请空间， 并在addr_list中注册
-        :param page_no: 想要放入的页号
-        :return: page_no在pool中的地址
-        """
-        # 如果有空闲的位置
-        if self.addr_list.count(-1) != 0:
-            index = self.addr_list.index(-1)
-            self.addr_list[index] = page_no
-            return index
 
-        # 如果没有空闲，则用时钟算法删除一页
-        i = 0
-        while True:
-            if self.occupy_list[i] == -1:
-                if self.addr_list[i] == -1:
-                    self.addr_list[i] = page_no
-                    return i
-                elif self.refer_list[i] > 0:
-                    self.refer_list[i] -= 1
-                elif self.refer_list[i] == 0:
-                    # 删除这一页
-                    pid = os.getpid()
-                    self.occupy_list[i] = pid
-                    index = i << 12
-                    page = self.pool.buf[index:index+4096]
-                    unload_buffer(page)
-                    self.occupy_list[i] = -1
-                    self.addr_list[i] = page_no
-                    return i
-            i = 0 if i == 255 else i + 1
+def load_buffer(page_no):
+    """
+    将文件加载为一个页然后返回, 不提供锁
+    :param page_no: 指定的页号
+    :return: 返回一个列表，代表页
+    """
+    address = 'db_files/' + str(page_no) + '.dat'
+    with open(address, 'rb') as file:
+        # 首先解码出除了fmt以外的部分
+        header_fmt = '6i?'
+        page_header = file.read(struct.calcsize(header_fmt))
+        page_header = list(struct.unpack_from(header_fmt, page_header, 0))
+        # 解码除了fmt_size之后，可以解码fmt
+        fmt_size = struct.calcsize(str(page_header[Page.fmt_size]) + 's')
+        fmt = file.read(fmt_size)
+        fmt = struct.unpack_from(str(page_header[Page.fmt_size]) + 's', fmt, 0)
+        page_header.append(fmt[0])
+        user_buffer = file.read()
 
-    def load_page(self, page_no):
-        """
-        把文件加载入缓存
-        :param page_no: 指定的页号
-        :return: 返回写入的地址
-        """
-        index = self.find_space(page_no)
-        index = index * 4096
-        address = 'db_files/' + str(page_no) + '.dat'
-        with open(address, 'rb') as file:
-            page = file.read()
-        length = len(page)
-        self.pool[index:index + length] = page
-        return index
-
-    def new_buffer(self):
-        """
-        申请文件和对应的page_no, 将其加入缓存中，得到一个addr，将其pin住
-        :param self:
-        :return: 返回申请得到的地址addr, 页号page_no
-        """
-        # 计算page_no的位置
-        self.pin_buffer()
-        page_no = self.buffer_info[CatOff.del_header]
-        if page_no == -1:  # 如果delete_list是空，则在heap中开辟
-            self.buffer_info[CatOff.heap_top] += 1
-            page_no = self.buffer_info[CatOff.heap_top]
-            addr = self.find_space(page_no)
-            self.pin_page(page_no)
-            address = 'db_files/' + str(page_no) + '.dat'
-            with open(address, 'a'):
-                pass
-
-        else:  # 如果delete_list非空
-            addr = self.load_page(page_no)
-            self.pin_page(page_no)
-            index = addr << 12
-            index += Off.next_page
-            next_page = struct.unpack_from('i', self.pool.buf, index)[0]
-            self.buffer_info[CatOff.del_header] = next_page
-
-        self.unpin_buffer()
-        return addr, page_no
-
-    def delete_buffer(self, page_no):
-        """
-         将缓存中的page_no删除，将文件从文件链表中删除
-        :param self:
-        :param page_no:
-        :return:
-        """
-        self.pin_page(page_no)
-        self.pin_buffer()
-        index = self.addr_list.index(page_no)
-        index = index << 12
-        index += Off.next_page
-        next_page = self.buffer_info[Off.space_header]
-        struct.pack_into('i', self.pool.buf, index, next_page)
-        self.buffer_info[2] = page_no
-        unload_buffer(page_no)
-        self.unpin_page(page_no)
+    records = struct.iter_unpack(fmt[0], user_buffer)
+    user_record = []
+    for record in records:
+        record = to_string(record)
+        user_record.append(record)
+    page = []
+    page.extend(page_header)
+    page.extend([False, True])
+    page.append(user_record)
+    return page
 
 
 def unload_buffer(page):
@@ -200,10 +93,119 @@ def unload_buffer(page):
     :param page: 列表
     :return: None
     """
-    page_no = struct.unpack_from('i', page, Off.current_page)[0]
-    address = 'db_files/' + str(page_no) + '.dat'
+    header_fmt = '6i?' + str(page[Page.fmt_size]) + 's'
+    header_size = struct.calcsize(header_fmt)
+    header_buffer = bytearray(header_size)
+    fmt = to_bytes(page[Page.fmt])[0]
+    page_header = page[0: Page.is_leaf + 1]
+    page_header.append(fmt)
+    struct.pack_into(header_fmt, header_buffer, 0, *page_header)
+    size = struct.calcsize(page[Page.fmt])
+    user_record = page[Page.user_record]
+    user_buffer = bytearray(size * len(user_record))
+    for i, record in enumerate(user_record):
+        record = to_bytes(record)
+        struct.pack_into(page[Page.fmt], user_buffer, i * size, *record)
+    address = 'db_files/' + str(page[Page.current_page]) + '.dat'
     with open(address, 'wb') as file:
-        file.write(page)
+        file.write(header_buffer)
+        file.write(user_buffer)
+
+
+def find_space(share):
+    """
+    找一个空闲的位置，如果没有则删除，最后返回地址i
+    :param share: 共享变量
+    :return: buffer_pool中的地址
+    """
+    i = 0
+    while True:
+        if share.buffer_pool[i][Page.current_page] not in share.pin_list:
+            if share.buffer_pool[i][Page.is_delete]:
+                return i
+            elif share.buffer_pool[i][Page.reference] > 0:
+                share.buffer_pool[i][Page.reference] -= 1
+            elif share.buffer_pool[i][Page.reference] == 0:
+                # 删除这一页
+                share.buffer_pool[i][Page.is_delete] = True
+                page = share.buffer_pool[i]
+                unload_buffer(page)
+                return i
+        i = 0 if i == 1023 else i + 1
+
+
+def find_page(share, page_no):
+    """
+    找到page_no对应的索引i
+    :param share:
+    :param page_no:
+    :return: 索引i, 找不到返回-1
+    """
+    for i in range(len(share.buffer_pool)):
+        if share.buffer_pool[i][Page.current_page] == page_no:
+            return i
+    return -1
+
+
+def read_buffer(share, page_no):
+    """
+    对应页数的读取,提供锁
+    :param share:
+    :param page_no:
+    :return:page 列表
+    """
+    pin_page(share, page_no)
+    index = find_page(share, page_no)
+    if index == -1:
+        page = load_buffer(page_no)
+        index = find_space(share)
+        fresh_buffer(share, page, index)
+    return list(share.buffer_pool[index])
+
+
+def new_buffer(share):
+    """
+    开辟一个新的文件，提供锁
+    :param share:
+    :return: 返回page_no
+    """
+    # 计算page_no的位置
+    pin_page(share, 'buffer_info')
+    buffer_info = share.buffer_info
+    page_no = buffer_info['del_header']
+    if page_no == -1:  # 如果delete_list是空，则在heap中开辟
+        buffer_info['heap_top'] += 1
+        page_no = buffer_info['heap_top']
+        pin_page(share, page_no)
+        address = 'db_files/' + str(page_no) + '.dat'
+        with open(address, 'a'):
+            pass
+    else:  # 如果delete_list非空
+        pin_page(share, page_no)
+        index = find_page(share, page_no)
+        buffer_info['del_header'] = share.buffer_pool[index][Page.next_page]
+
+    share.buffer_info = buffer_info
+    unpin_page(share, 'buffer_info')
+    return page_no
+
+
+def delete_buffer(share, page_no):
+    """
+     要求必须在缓存中，文件从链表删除，提供锁
+    :param share:
+    :param page_no:
+    :return:
+    """
+    pin_page(share, page_no)
+    index = find_page(share, page_no)
+    buffer_info = share.buffer_info
+    share.buffer_pool[index][Page.next_page] = buffer_info['del_header']
+    share.buffer_pool[index][Page.is_delete] = True
+    buffer_info['del_header'] = page_no
+    share.buffer_info = buffer_info
+    unload_buffer(page_no)
+    unpin_page(share, page_no)
 
 
 def read_json(json_name):
@@ -225,3 +227,18 @@ def write_json(json_name, buffer):
     with open(address, 'w') as file:
         file.write(buffer)
 
+
+def to_bytes(value):
+    value = list(value)
+    for i in range(len(value)):
+        if isinstance(value[i], str):
+            value[i] = str.encode(value[i])
+    return value
+
+
+def to_string(value):
+    value = list(value)
+    for i in range(len(value)):  # 对于每一个属性.str转为bytes
+        if isinstance(value[i], bytes):
+            value[i] = str(value[i], encoding="utf-8")
+    return value
