@@ -237,6 +237,144 @@ def insert_index(share, value_list, table_name, index):
     fresh_buffer(share, page, index)
     fresh_catalog(share, table_name, table)
 
+def select_record(page_no,cols, table, condition, buf):## select cols from table   where condition    like: 
+                                                ## select  *   from student where age>18
+    MAX_RECORDS_PER_BLOCK=4096
+    page = load_buffer(page_no)#读catalog_buffer
+    if table in page:
+        record = page[table]
+    else:
+        print('table {} does not exit'.format(table))
+    record_cols = record['column_list']
+    record_types = record['fmt']
+    indexlist = record['index_list']
 
+    index_cols = []
+    trees = []
+    if len(indexlist) != 0:
+        for col, index_name in indexlist:
+            index_cols.append(col)
+            tree = indexlist[index_name]#address为索引的名称+索引，表示所在树的根地址
+            trees.append(tree)
+
+    return_records = []
+
+    table_blocks = []
+    for i, b in enumerate(buf.header):
+        if b['table'] == table:
+            table_blocks.append(i)
+
+    # select from all blocks
+    if condition is not None:
+        exps = condition.split('and')#将不同条件分隔开
+
+        if len(indexlist) != 0 and len(exps) == 1:
+            exp = exps[0].strip()
+            match = re.match(r'^([A-Za-z0-9_]+)\s*([<>=]+)\s*(.+)$', exp, re.S)
+
+            if match and len(match.groups()) == 3:
+                col, op, value = match.groups()#col:
+
+                if op == '=' and col in index_cols:
+                    col_index = index_cols.index(col)
+                    tree = trees[col_index]
+                    value = eval(value)
+                    ptrs = tree.search(value)
+                    if isinstance(ptrs, list):
+                        for p in ptrs:
+                            block_id = p // MAX_RECORDS_PER_BLOCK
+                            pos = p % MAX_RECORDS_PER_BLOCK
+                            b = buf.get_block(block_id)
+                            return_records.append(b.data()[pos])
+                    else:
+                        block_id = ptrs // MAX_RECORDS_PER_BLOCK
+                        pos = ptrs % MAX_RECORDS_PER_BLOCK
+                        b = buf.get_block(block_id)
+                        return_records.append(b.data()[pos])
+                else:
+                    return_records = _select_without_index(table_blocks, buf, exps, record_cols, record_types)
+
+        else:
+            return_records = _select_without_index(table_blocks, buf, exps, record_cols, record_types)
+
+    else:
+        for i in table_blocks:
+            b = buf.get_block(i)
+            records = b.data()
+            return_records += records
+
+    # select cols
+    if cols != '*':
+        indices = [record_cols.index(c) for c in cols]
+        return_records = [[r[i] for i in indices] for r in return_records]
+        return_cols = cols
+    else:
+        return_cols = record_cols
+
+    return return_records, return_cols
+
+def _select_without_index(table_blocks, buf, exps, record_cols, record_types):
+    return_records = []
+    for i in table_blocks:
+        b = buf.get_block(i)
+        records = b.data()
+
+        for exp in exps:
+            exp = exp.strip()
+            match = re.match(r'^([A-Za-z0-9_]+)\s*([<>=]+)\s*(.+)$', exp, re.S)
+            if match and len(match.groups()) == 3:
+                col, op, value = match.groups()
+                records = _select_filter(records, col, op, value, record_cols, record_types)
+            else:
+                print('Illegal condition: {}'.format(exp))
+        return_records += records
+    return return_records
+
+def _convert_to(v, t):
+    if t == 0:
+        return int(v)
+    elif t == -1:
+        return float(v)
+    else:
+        return v.strip("'")
+
+
+def _select_filter(records, col, op, value, record_cols, record_types, reverse=False):
+    col_index = record_cols.index(col)
+    value = _convert_to(value, record_types[col_index])
+
+    def f1(v):
+        return v > value
+
+    def f2(v):
+        return v < value
+
+    def f3(v):
+        return v == value
+
+    def f4(v):
+        return v >= value
+
+    def f5(v):
+        return v <= value
+
+    def f6(v):
+        return v != value
+
+    funcs = {'>': f1, '<': f2, '=': f3, '>=': f4, '<=': f5, '<>': f6}
+    if op in funcs:
+        f = funcs[op]
+    else:
+        print('Illegal operator: {}'.format(op))
+
+    new_records = []
+    for r in records:
+        satisfy = f(r[col_index])
+        if reverse:
+            satisfy = not satisfy
+        if satisfy:
+            new_records.append(r)
+
+    return new_records
 def delete_root(share):
     pass
