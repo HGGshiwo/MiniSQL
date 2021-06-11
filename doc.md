@@ -23,8 +23,8 @@ page是一页，按照一个bytearray的形式存储。前面部分是page_heade
 ```python
 if self.addr_list.count(page_no) == 0:  # 检查page_no是否在addr_list中
 	self.load_page(page_no)  # 如果不在，则从文件中拷贝进来
-index = self.addr_list.index(page_no)  # 获得page_no在addr_list的第几个元素
-addr = index << 12 # page_no所在page的真实位置是index*4096
+addr = self.addr_list.index(page_no)  # 获得page_no在addr_list的第几个元素
+true_addr = addr << 12 # page_no所在page的真实位置是addr*4096
 # addr就是page的第一个byte所在的下标
 ```
 
@@ -37,13 +37,11 @@ page是一段bytearray，其中的解析方式如下：
 | 0:4          | current_page      | 当前页号                             | 4        | -1       |
 | 4:8          | next_page         | 后一页                               | 4        | -1       |
 | 8:12         | header            | 第一条记录的位置                     | 4        | 0        |
-| 12:16        | space_header      | 第一条删除记录的位置(暂时不用)       | 4        | 0        |
-| 16:17        | ==is_leaf==       | 是否是叶子                           | 1        |          |
-| 17:21        | ==previous_page== | 前一页                               | 4        | -1       |
-| 21:25        | ==parent==        | 父页                                 | 4        | -1       |
-| 25:29        | ==index_offset==  | 索引在一条记录的第几个位置           | 4        |          |
-| 29:33        | ==fmt_size==      | fmt所占字节数目                      | 4        |          |
-| 33:k         | ==fmt==           | 字符串，表示解码格式，不包括两个指针 | fmt_size |          |
+| 12:13        | ==is_leaf==       | 是否是叶子                           | 1        |          |
+| 13:17        | ==previous_page== | 前一页                               | 4        | -1       |
+| 17:21        | ==parent==        | 父页                                 | 4        | -1       |
+| 21:25        | ==fmt_size==      | fmt所占字节数目                      | 4        |          |
+| 25:k         | ==fmt==           | 字符串，表示解码格式，不包括两个指针 | fmt_size |          |
 | k:k+fmt_size | user_record       | 用户记录                             |          | 0        |
 | ...          |                   |                                      |          |          |
 
@@ -53,11 +51,11 @@ page是一段bytearray，其中的解析方式如下：
 
 ```python
 # 假如想要对page的next_page进行赋值, 注意next_page在addr开始后的几个byte之后。
-struct.pack_into('i', self.pool.buf, addr+Off.next_page, next_page)
+struct.pack_into('i', self.pool.buf, (addr << 12) + Off.next_page, next_page)
 # pack_into将一个数据转为byte写入内存
 # i表示数据的格式是int
 # self.pool.buf是写入的内存
-# addr+Off.next_page是偏移位置。addr是页的位置，Off.next_page是next_page相对页的位置
+# (addr << 12) + Off.next_page是偏移位置。addr是页的位置，Off.next_page是next_page相对页的位置
 # next_page 想要写入的数据
 ```
 
@@ -111,7 +109,7 @@ while p != 0:
 
 ### 2.1 获取表信息的例子
 
-在self.table_list[table_name]中获取
+在table = self.table_list[table_name]中获取
 
 ### 2.2 解析表信息的例子
 
@@ -122,7 +120,7 @@ while p != 0:
 | 位置 | 名称        | 含义                                                |
 | ---- | ----------- | --------------------------------------------------- |
 | 0    | primary_key | primary_key所在的位置下标                           |
-| 1    | leaf_header | 第一个叶子节点所在的地方                            |
+| 1    | leaf_header | 第一个叶子节点所在的页号                            |
 | 2    | name        | 列的名称，字符串                                    |
 | 3    | fmt         | 字符串，第一个元素的解析方式                        |
 | 4    | unique      | bool，第一个元素是否是unique                        |
@@ -152,7 +150,7 @@ while p != 0:
 | refer_list          | 第i个页的引用次数                                            | free         |
 | occupy_list         | 第i个页被哪个进程占用，无则是-1                              | pin, unpin   |
 | pool                | 一段bytearray                                                | 任意         |
-| buffer_info         | 物理文件的位置，0是pid, 1是heap_top, 2是del_header           |              |
+| delete_list         | 一个delete_list，如果被删除的文件会记录在上面                |              |
 | catalog_list        | 记录所有表的名称                                             |              |
 | catalog_occupy_list | catalog被占用的情况                                          |              |
 | table_name1         | 一个表的信息                                                 |              |

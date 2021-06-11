@@ -28,10 +28,8 @@ class CatalogManager(BufferManager):
         index = self.catalog_list.index(table_name)
         self.catalog_occupy_list[index] = -1
 
-
     def pin_user(self, user_name):
         pass
 
     def unpin_user(self, user_name):
         pass
-

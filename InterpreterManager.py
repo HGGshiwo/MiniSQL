@@ -8,3 +8,6 @@ class InterpreterManager(Api):
             cmd = input()
             # do something here
         pass
+
+    def get_command(self, cmd):
+        pass

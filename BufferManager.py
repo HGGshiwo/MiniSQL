@@ -9,20 +9,11 @@ class Off(IntEnum):
     current_page = 0
     next_page = 4
     header = 8
-    space_header = 12
-    is_leaf = 16
-    previous_page = 17
-    parent = 21
-    index_offset = 25
-    fmt_size = 29
-    fmt = 33
-
-
-class CatOff(IntEnum):
-    #  下面是catalog_info中使用的
-    pid = 0
-    heap_top = 1
-    del_header = 2
+    is_leaf = 12
+    previous_page = 13
+    parent = 17
+    fmt_size = 21
+    fmt = 25
 
 
 class BufferManager(object):
@@ -36,7 +27,8 @@ class BufferManager(object):
             self.dirty_list = shared_memory.ShareableList(sequence=None, name='dirty_list')
             self.refer_list = shared_memory.ShareableList(sequence=None, name='refer_list')
             self.occupy_list = shared_memory.ShareableList(sequence=None, name='occupy_list')
-            self.buffer_info = shared_memory.ShareableList(sequence=None, name='buffer')
+            self.delete_list = shared_memory.ShareableList(sequence=None, name='delete_list')
+            self.occupy_delete = shared_memory.ShareableList(sequence=None, name='occupy_delete')
             self.catalog_list = shared_memory.ShareableList(sequence=None, name='catalog_list')
             self.catalog_occupy_list = shared_memory.ShareableList(sequence=None, name='catalog_occupy_list')
             self.table_list = {}
@@ -49,8 +41,9 @@ class BufferManager(object):
             self.dirty_list = shared_memory.ShareableList(sequence=s, name='dirty_list')
             self.refer_list = shared_memory.ShareableList(sequence=s, name='refer_list')
             self.occupy_list = shared_memory.ShareableList(sequence=s, name='occupy_list')
-            buffer_info = read_json('buffer')
-            self.buffer_info = buffer_info['0']
+            delete_list = read_json('buffer')['delete_list']
+            self.delete_list = shared_memory.ShareableList(sequence=delete_list, name='delete_list')
+            self.occupy_delete = shared_memory.ShareableList(sequence=[-1], name='delete_occupy')
             catalog_info = read_json('catalog')
             self.catalog_list = shared_memory.ShareableList(sequence=catalog_info['catalog_list'], name='catalog_list')
             self.table_list = {}
@@ -91,12 +84,12 @@ class BufferManager(object):
         :return:
         """
         pid = os.getpid()
-        while self.buffer_info[CatOff.pid] != pid:
-            if self.buffer_info[CatOff.pid] == -1:
-                self.buffer_info[CatOff.pid] = pid
+        while self.occupy_delete[0] != pid:
+            if self.occupy_delete[0] == -1:
+                self.occupy_delete[0] = pid
 
     def unpin_buffer(self):
-        self.buffer_info[CatOff.pid] = -1
+        self.occupy_delete[0] = -1
 
     def find_space(self, page_no):
         """
@@ -123,9 +116,7 @@ class BufferManager(object):
                     # 删除这一页
                     pid = os.getpid()
                     self.occupy_list[i] = pid
-                    index = i << 12
-                    page = self.pool.buf[index:index+4096]
-                    unload_buffer(page)
+                    self.unload_buffer(i)
                     self.occupy_list[i] = -1
                     self.addr_list[i] = page_no
                     return i
@@ -143,7 +134,7 @@ class BufferManager(object):
         with open(address, 'rb') as file:
             page = file.read()
         length = len(page)
-        self.pool[index:index + length] = page
+        self.pool.buf[index:index + length] = page[:]
         return index
 
     def new_buffer(self):
@@ -154,56 +145,46 @@ class BufferManager(object):
         """
         # 计算page_no的位置
         self.pin_buffer()
-        page_no = self.buffer_info[CatOff.del_header]
-        if page_no == -1:  # 如果delete_list是空，则在heap中开辟
-            self.buffer_info[CatOff.heap_top] += 1
-            page_no = self.buffer_info[CatOff.heap_top]
-            addr = self.find_space(page_no)
-            self.pin_page(page_no)
-            address = 'db_files/' + str(page_no) + '.dat'
-            with open(address, 'a'):
-                pass
-
-        else:  # 如果delete_list非空
-            addr = self.load_page(page_no)
-            self.pin_page(page_no)
-            index = addr << 12
-            index += Off.next_page
-            next_page = struct.unpack_from('i', self.pool.buf, index)[0]
-            self.buffer_info[CatOff.del_header] = next_page
+        if self.delete_list.count(-1) == 0:
+            print("可以占用的文件已经达到上限，无法开辟新文件")
+            return
+        page_no = self.delete_list.index(-1)
+        self.delete_list[page_no] = 0
+        addr = self.find_space(page_no)
+        self.pin_page(page_no)
+        address = 'db_files/' + str(page_no) + '.dat'
+        with open(address, 'a'):
+            pass
 
         self.unpin_buffer()
         return addr, page_no
 
     def delete_buffer(self, page_no):
         """
-         将缓存中的page_no删除，将文件从文件链表中删除
+         将缓存中的page_no删除，将文件删除
         :param self:
         :param page_no:
         :return:
         """
         self.pin_page(page_no)
         self.pin_buffer()
-        index = self.addr_list.index(page_no)
-        index = index << 12
-        index += Off.next_page
-        next_page = self.buffer_info[Off.space_header]
-        struct.pack_into('i', self.pool.buf, index, next_page)
-        self.buffer_info[2] = page_no
-        unload_buffer(page_no)
+        addr = self.addr_list.index(page_no)
+        self.delete_list[page_no] = -1
+        self.unload_buffer(addr)
         self.unpin_page(page_no)
 
-
-def unload_buffer(page):
-    """
-    将一个page写回文件
-    :param page: 列表
-    :return: None
-    """
-    page_no = struct.unpack_from('i', page, Off.current_page)[0]
-    address = 'db_files/' + str(page_no) + '.dat'
-    with open(address, 'wb') as file:
-        file.write(page)
+    def unload_buffer(self, addr):
+        """
+        将一个page写回文件
+        :param addr: 地址
+        :return: None
+        """
+        page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.current_page)[0]
+        address = 'db_files/' + str(page_no) + '.dat'
+        buf = bytearray(4096)
+        buf[:] = self.pool.buf[(addr << 12): ((addr + 1) << 12)]
+        with open(address, 'wb') as file:
+            file.write(buf)
 
 
 def read_json(json_name):
@@ -224,4 +205,3 @@ def write_json(json_name, buffer):
     address = 'db_files/' + json_name + '.json'
     with open(address, 'w') as file:
         file.write(buffer)
-

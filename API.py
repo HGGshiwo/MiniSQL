@@ -3,9 +3,10 @@ import struct
 import time
 from enum import IntEnum
 from IndexManager import IndexManager
-from BufferManager import Off
+from BufferManager import Off, write_json
 from IndexManager import TabOff
 from RecordManager import RecOff
+
 
 class Error(IntEnum):
     no_error = 0
@@ -34,8 +35,8 @@ class Api(IndexManager):
         print(self.addr_list)
         print('occupy_list', end='\t\t')
         print(self.occupy_list)
-        print('buffer_info', end='\t\t')
-        print(self.buffer_info)
+        print('delete_list', end='\t\t')
+        print(self.delete_list)
         print('catalog_list', end='\t')
         print(self.catalog_list)
 
@@ -62,50 +63,84 @@ class Api(IndexManager):
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
         p = header
         while p != 0:
-            pre = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.pre_addr)[0]
+            pre = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.pre_addr)[0]
             r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
-            next = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
-            print("record:\tpre:" + str(pre) + '\tnext:' + str(next) + '\tr:', end='')
+            cur = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.curr_addr)[0]
+            next = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
+            valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
+            print("valid:" + str(valid) + "\tcur:" + str(cur) + "\tpre:" + str(pre) + '\tnext:' + str(next) + '\tr:', end='')
             print(r)
             p = next
 
     def create_table(self, table_name, primary_key, table_info):
         """
-        table_name  表名称
-        fmt_list     列表，每个字符串格式
-        column_list 列表，属性的名称
-        unique_list 列表，属性是否唯一
-        primary_key 字符串
+        创建一个表
+        :param table_name: 表名
+        :param primary_key: 主键位于第几个元素
+        :param table_info: (name, fmt, unique, index_page)，其中index_page全部是-1
+        :return:
         """
         self.new_table(table_name, primary_key, table_info)
 
     def delete(self, table_name, condition):
         """
-        删除data：根据select_index，将对应的记录enable=0
-        删除index：根据select_index，将节点的指针删除，然后循环删除
-        整个过程和插入差不多
+        删除满足condition的节点
+        :param table_name:
+        :param condition:
+        :return:
         """
-        pass
+        if self.catalog_list.count(table_name) != 0:
+            delete_list = self.select_page(table_name, condition)  # 返回对应的记录
+            table = self.table_list[table_name]
+            for delete_record in delete_list:
+                catalog_num = (len(table) - 2) // 4
+                for i in range(0, catalog_num):
+                    if table[(i << 2) + 5] != -1:
+                        self.delete_index(table_name, i, delete_record[i])
+            return
+        print('表名为 ' + table_name + ' 的表不存在.')
 
     def insert(self, table_name, value_list):
         """
-        插入
+        插入一条数据
+        :param table_name:
+        :param value_list:
+        :return:
         """
-        op = Operate.insert
-        # 插入前看表是否存在0
-
         if self.catalog_list.count(table_name) != 0:
             table = self.table_list[table_name]
             primary_key = table[TabOff.primary_key]
-            addr = self.insert_index(value_list, table_name, primary_key)
+            # 在主索引树插入
+            self.insert_index(value_list, table_name, primary_key)
+            # 在二级索引树插入
             catalog_num = (len(table)-2) // 4
             for i in range(0, catalog_num):
                 if i != primary_key and table[(i << 2) + 5] != -1:
-                    index_value = [addr, value_list[i]]
+                    index_value = [value_list[primary_key], value_list[i]]
                     self.insert_index(index_value, table_name, i)
             return
 
-        raise RuntimeError('表名为 ' + table_name + ' 的表不存在.')
+        print('表名为 ' + table_name + ' 的表不存在.')
 
-    def exit(self):
+    def select(self, table_name, condition):
+        pass
+
+    def create_index(self, table_name, index):
+        pass
+
+    def drop_index(self, table_name, index):
+        pass
+
+    def quit(self):
+        for i in range(len(self.addr_list)):
+            if self.dirty_list[i] and self.addr_list[i] != -1:
+                self.unload_buffer(i)
+        write_json('buffer', {"delete_list": list(self.delete_list)})
+        catalog_info = {}
+        catalog_info["catalog_list"] = list(self.catalog_list)
+        for table in self.catalog_list:
+            if table != -1:
+                catalog_info[table] = list(self.table_list[table])
+        write_json('catalog', catalog_info)
+        print("退出成功.")
         pass
