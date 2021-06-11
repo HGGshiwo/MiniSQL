@@ -1,1 +1,1 @@
-{"catalog_list": ["test1", "test2"], "test1": [0, 0, "index", "i", true, 2, "a", "c", false, -1], "test2": [0, 11, "index", "i", true, 11, "a", "c", false, -1]}
+{"catalog_list": ["test", -1, -1], "test": [0, 0, "index", "i", true, 2, "a", "c", false, -1]}

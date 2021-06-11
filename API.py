@@ -123,6 +123,13 @@ class Api(IndexManager):
         print('表名为 ' + table_name + ' 的表不存在.')
 
     def select(self, table_name, condition):
+        """
+        直接进行查找
+        :param table_name:
+        :param condition:
+        :return:
+        """
+        return self.select_page(table_name, condition)
         pass
 
     def create_index(self, table_name, index):

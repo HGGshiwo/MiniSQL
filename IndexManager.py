@@ -419,29 +419,145 @@ class IndexManager(RecordManager):
         :return:
         """
         table = self.table_list[table_name]
-
+        primary_key = table[TabOff.primary_key]
+        primary_page = table[(primary_key << 2) + 5]  # 主索引所在根
         # 命令预处理
-        index = None
-        is_primary_key = False
+        index_cond = None
+        primary_cond = None
+        page_no = -1  # 索引的根
+        index_fmt = None
         for i, cond in enumerate(cond_list):
-            res = re.match(r'^([A-Za-z0-9_]+)\s*([<>=]+)\s*(.+)$', cond, re.S)
-            column_name, op, value = res.groups()
+            cond = re.match(r'^([A-Za-z0-9_]+)\s*([<>=]+)\s*(.+)$', cond, re.S)
+            column_name, op, value = cond.groups()
 
             # 将name转为数字
             column = (table.index(column_name) - 2) // 4
-            index_page = table.index(column_name) + 3
-            if table[index_page] != -1 and is_primary_key is False:
-                index = column
-                if column == table[TabOff.primary_key]:
-                    is_primary_key = True
-
             # 将value转为数字
-            value = int(value)
-
+            value = eval(value)
             cond_list[i] = [column, op, value]
+
+            index_page = table.index(column_name) + 3
+            fmt = table.index(column_name) + 1
+            if table[index_page] != -1:
+                if column == primary_key:
+                    primary_cond = cond_list[i]
+                    page_no = table[index_page]
+                    index_fmt = 'i' + table[fmt]
+                elif index_cond is None:
+                    index_cond = cond_list[i]
+                    cond_list.pop(cond_list[i])
+                    page_no = table[index_page]
+        pass
+
         res = []
-        if index is None:
-            # 开始顺序查找
+        # 如果是主索引查询
+        if primary_cond is not None:
+            stack = []
+            stack.append(page_no)
+
+            # 深度优先搜索+部分剪枝
+            while len(stack) != 0:
+                page_no = stack.pop()
+                if self.addr_list.count(page_no) == 0:
+                    self.load_page(page_no)
+                addr = self.addr_list.index(page_no)
+
+                is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
+                if is_leaf:
+                    page_res = self.select_record(addr, cond_list)
+                    res.extend(page_res)
+                else:
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+                    while p != 0:
+                        r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+                        if check_index(r[1], primary_cond):
+                            stack.append(r[0])
+                        elif primary_cond[1] == "=" \
+                                or primary_cond[1] == ">" \
+                                or primary_cond[1] == ">=":
+                            break
+                        p = struct.unpack_from("i", self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
+                    pass
+            pass
+
+        # 如果是二级索引查询
+        elif index_cond is not None:
+            primary_value = []
+            stack = []
+            stack.append(page_no)
+
+            # 在二级索引树中搜索
+            while len(stack) != 0:
+                page_no = stack.pop()
+                if self.addr_list.count(page_no) == 0:
+                    self.load_page(page_no)
+                addr = self.addr_list.index(page_no)
+
+                is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)
+                if is_leaf:
+                    page_res = self.select_record(addr, cond_list)
+                    for r in page_res:
+                        primary_value.append(r[1])
+                else:
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+                    while p != 0:
+                        r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+                        if check_index(r[1], index_cond):
+                            stack.append(r[0])
+                        elif index_cond[1] == "=" \
+                                or index_cond[1] == ">" \
+                                or index_cond[1] == ">=":
+                            break
+                        p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
+            pass
+
+            # 回表
+            for value in primary_value:
+                if self.addr_list.count(primary_page) == 0:
+                    self.load_page(primary_page)
+                addr = self.addr_list.index(primary_page)
+                is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
+
+                # 循环到叶子节点
+                while not is_leaf:
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+                    last_page = None
+                    while True:
+                        if p == 0:
+                            page_no = last_page
+                            break
+                        r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+                        if r[1] > value:
+                            page_no = last_page
+                            break
+                        pass
+                        last_page = r[0]
+                        p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
+                    pass
+                    # 如果不存在比它大的记录，则进入到最后一页
+                    if self.addr_list.count(page_no) == 0:
+                        self.load_page(page_no)
+                    addr = self.addr_list.index(page_no)
+                    is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
+                pass
+
+                # 在叶子中查找
+                p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+                fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
+                fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
+                while p != 0:
+                    valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
+                    if valid:
+                        r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+                        if r[primary_key] == value:
+                            res.append(r)
+                            break
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)
+                pass
+            pass
+
+        # 顺序查询
+        else:
             leaf_header = table[TabOff.leaf_header]
             page = leaf_header
             while page != -1:
@@ -452,11 +568,29 @@ class IndexManager(RecordManager):
                 res.extend(page_res)
                 page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)
             pass
-        elif is_primary_key:
-            # 主索引树查找
-            pass
-        else:
-            # 次级索引树查找
-            pass
 
+        return res
+
+
+def check_index(index_value, index_cond):
+    """
+    对record进行检测
+    :param index_cond: 索引条件
+    :param index_value: 索引值
+    :return: True
+    """
+
+    if index_cond[1] == "=":
+        if index_value > index_cond[2]:
+            return False
+    elif index_cond[1] == "<":
+        if index_value >= index_cond[2]:
+            return False
+    elif index_cond[1] == "<=":
+        if index_value > index_cond[2]:
+            return False
+    elif index_cond[1] == "<>":
+        if index_value == index_cond[2]:
+            return False
+    return True
 

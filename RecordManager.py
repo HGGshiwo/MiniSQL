@@ -161,7 +161,7 @@ class RecordManager(CatalogManager):
                 r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
                 if check_cond(r, cond_list):
                     res.append(r)
-            p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)
+            p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
         pass
         return res
 
@@ -175,14 +175,21 @@ def check_cond(record, cond_list):
     """
     for cond in cond_list:
         if cond[1] == "=":
-            return record[cond[0]] == cond[2]
+            if record[cond[0]] != cond[2]:
+                return False
         elif cond[1] == ">":
-            return record[cond[0]] > cond[2]
+            if record[cond[0]] <= cond[2]:
+                return False
         elif cond[1] == "<":
-            return record[cond[0]] < cond[2]
+            if record[cond[0]] >= cond[2]:
+                return False
         elif cond[1] == ">=":
-            return record[cond[0]] >= cond[2]
+            if record[cond[0]] < cond[2]:
+                return False
         elif cond[1] == "<=":
-            return record[cond[0]] <= cond[2]
+            if record[cond[0]] > cond[2]:
+                return False
         elif cond[1] == "<>":
-            return record[cond[0]] != cond[2]
+            if record[cond[0]] == cond[2]:
+                return False
+    return True
