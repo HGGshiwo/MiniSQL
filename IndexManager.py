@@ -83,8 +83,8 @@ class IndexManager(RecordManager):
         """
         # self.pin_catalog(table_name)
         table = self.table_list[table_name]
-        page_no = table[2 + (index >> 2) + TabOff.index_page]  # 根节点
-        index_fmt = str(table[2 + (index >> 2) + TabOff.fmt]) + 'i'  # 索引的解码方式，是索引的个数+i。i表示地址
+        page_no = table[2 + (index << 2) + TabOff.index_page]  # 根节点
+        index_fmt = str(table[2 + (index << 2) + TabOff.fmt]) + 'i'  # 索引的解码方式，是索引的个数+i。i表示地址
         if self.addr_list.count(page_no) == 0:
             self.load_page(page_no)
         addr = self.addr_list.index(page_no)
