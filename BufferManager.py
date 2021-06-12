@@ -1,8 +1,17 @@
 import struct
 import json
-import os
 from enum import IntEnum
 from multiprocessing import shared_memory
+
+
+class LockOff(IntEnum):
+    # 前255个是缓存
+    # 后255个是表
+    addr_list = 512
+    dirty_list = 513
+    refer_list = 514
+    file_list = 515
+    catalog_list = 516
 
 
 class Off(IntEnum):
@@ -21,29 +30,25 @@ class BufferManager(object):
     内存管理类
     """
     def __init__(self):
+        self.lock = None
         try:
             self.pool = shared_memory.SharedMemory(create=False, name='pool')
             self.addr_list = shared_memory.ShareableList(sequence=None, name='addr_list')
             self.dirty_list = shared_memory.ShareableList(sequence=None, name='dirty_list')
             self.refer_list = shared_memory.ShareableList(sequence=None, name='refer_list')
-            self.occupy_list = shared_memory.ShareableList(sequence=None, name='occupy_list')
-            self.delete_list = shared_memory.ShareableList(sequence=None, name='delete_list')
-            self.occupy_delete = shared_memory.ShareableList(sequence=None, name='occupy_delete')
+            self.file_list = shared_memory.ShareableList(sequence=None, name='file_list')
             self.catalog_list = shared_memory.ShareableList(sequence=None, name='catalog_list')
-            self.catalog_occupy_list = shared_memory.ShareableList(sequence=None, name='catalog_occupy_list')
             self.table_list = {}
             for table in self.catalog_list:
                 self.table_list[table] = shared_memory.ShareableList(sequence=None, name=table)
         except FileNotFoundError:
             s = [-1] * 255  # 缓存空间的页数
-            self.pool = shared_memory.SharedMemory(create=True, name='pool', size=1044480)
+            self.pool = shared_memory.SharedMemory(create=True, name='pool', size=(2 << 20))
             self.addr_list = shared_memory.ShareableList(sequence=s, name='addr_list')
             self.dirty_list = shared_memory.ShareableList(sequence=s, name='dirty_list')
             self.refer_list = shared_memory.ShareableList(sequence=s, name='refer_list')
-            self.occupy_list = shared_memory.ShareableList(sequence=s, name='occupy_list')
-            delete_list = read_json('buffer')['delete_list']
-            self.delete_list = shared_memory.ShareableList(sequence=delete_list, name='delete_list')
-            self.occupy_delete = shared_memory.ShareableList(sequence=[-1], name='delete_occupy')
+            file_list = read_json('buffer')['file_list']
+            self.file_list = shared_memory.ShareableList(sequence=file_list, name='file_list')
             catalog_info = read_json('catalog')
             self.catalog_list = shared_memory.ShareableList(sequence=catalog_info['catalog_list'], name='catalog_list')
             self.table_list = {}
@@ -51,45 +56,40 @@ class BufferManager(object):
                 if table == -1:
                     continue
                 self.table_list[table] = shared_memory.ShareableList(sequence=catalog_info[table], name=table)
-            t = [-1]*1024  # 最多建1024张表
-            self.catalog_occupy_list = shared_memory.ShareableList(sequence=t, name='catalog_occupy_list')
 
-    def pin_page(self, page_no):
+    def pin_page(self, addr):
         """
-        将指定的进程id加入到需求列表，并阻塞，直到该page被pin住
-        :param page_no: 页号
+        将指定的缓存池中的地址加锁
+        :param addr: 地址
         :return: None
         """
-        index = self.addr_list.index(page_no)
-        pid = os.getpid()
-        while self.occupy_list[index] != pid:
-            if self.occupy_list[index] == -1:
-                self.occupy_list[index] = pid
-        pass
-        self.dirty_list[index] = True
-        self.refer_list[index] += 1
+        if self.lock is not None:
+            lock = self.lock[addr]
+            lock.acquire()
 
-    def unpin_page(self, page_no):
+    def unpin_page(self, addr):
         """
-        将一页移出
-        :param page_no:
+        将地址unpin
+        :param addr:
         :return:
         """
-        index = self.addr_list.index(page_no)
-        self.occupy_list[index] = -1
+        if self.lock is not None:
+            lock = self.lock[addr]
+            lock.release()
 
-    def pin_buffer(self):
+    def pin_file(self):
         """
-        pin buffer_info，即pin住物理文件的空闲位置
+        将文件列表pin住
         :return:
         """
-        pid = os.getpid()
-        while self.occupy_delete[0] != pid:
-            if self.occupy_delete[0] == -1:
-                self.occupy_delete[0] = pid
+        if self.lock is not None:
+            lock = self.lock[LockOff.file_list]
+            lock.acquire()
 
-    def unpin_buffer(self):
-        self.occupy_delete[0] = -1
+    def unpin_file(self):
+        if self.lock is not None:
+            lock = self.lock[LockOff.file_list]
+            lock.release()
 
     def find_space(self, page_no):
         """
@@ -106,20 +106,16 @@ class BufferManager(object):
         # 如果没有空闲，则用时钟算法删除一页
         i = 0
         while True:
-            if self.occupy_list[i] == -1:
-                if self.addr_list[i] == -1:
-                    self.addr_list[i] = page_no
-                    return i
-                elif self.refer_list[i] > 0:
-                    self.refer_list[i] -= 1
-                elif self.refer_list[i] == 0:
-                    # 删除这一页
-                    pid = os.getpid()
-                    self.occupy_list[i] = pid
-                    self.unload_buffer(i)
-                    self.occupy_list[i] = -1
-                    self.addr_list[i] = page_no
-                    return i
+            if self.addr_list[i] == -1:
+                self.addr_list[i] = page_no
+                return i
+            elif self.refer_list[i] > 0:
+                self.refer_list[i] -= 1
+            elif self.refer_list[i] == 0:
+                # 删除这一页
+                self.unload_buffer(i)
+                self.addr_list[i] = page_no
+                return i
             i = 0 if i == 255 else i + 1
 
     def load_page(self, page_no):
@@ -144,19 +140,15 @@ class BufferManager(object):
         :return: 返回申请得到的地址addr, 页号page_no
         """
         # 计算page_no的位置
-        self.pin_buffer()
-        if self.delete_list.count(-1) == 0:
-            print("可以占用的文件已经达到上限，无法开辟新文件")
-            return
-        page_no = self.delete_list.index(-1)
-        self.delete_list[page_no] = 0
+        if self.file_list.count(-1) == 0:
+            raise Exception('B1')
+        page_no = self.file_list.index(-1)
+        self.file_list[page_no] = 0
         addr = self.find_space(page_no)
         self.pin_page(page_no)
         address = 'db_files/' + str(page_no) + '.dat'
         with open(address, 'a'):
             pass
-
-        self.unpin_buffer()
         return addr, page_no
 
     def delete_buffer(self, page_no):
@@ -166,10 +158,8 @@ class BufferManager(object):
         :param page_no:
         :return:
         """
-        self.pin_page(page_no)
-        self.pin_buffer()
         addr = self.addr_list.index(page_no)
-        self.delete_list[page_no] = -1
+        self.file_list[page_no] = -1
         self.unload_buffer(addr)
         self.unpin_page(page_no)
 

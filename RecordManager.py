@@ -2,7 +2,6 @@ import struct
 from CatalogManager import CatalogManager
 from BufferManager import Off
 from enum import IntEnum
-import re
 
 
 class RecOff(IntEnum):
@@ -44,14 +43,15 @@ class RecordManager(CatalogManager):
             if offset + gap > 4096:
                 # 非常麻烦，需要删除最后一条记录，然后将最后一条记录作为新记录返回
                 # 这么做的目的是，无法确定该条记录在新页还是旧页中，只能替换成一条确定的记录
-                offset = offset - gap  # 退回到最后一条记录
+                # 去寻找最后一条记录
+                p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+                offset = p
+                while p != 0:
+                    offset = p
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)
                 last_record = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + offset + RecOff.record)
                 pre_addr = struct.unpack_from('i', self.pool.buf, (addr << 12) + offset + RecOff.pre_addr)[0]
-                next_addr = struct.unpack_from('i', self.pool.buf, (addr << 12) + offset + RecOff.next_addr)[0]
-                if pre_addr != 0:
-                    struct.pack_into('i', self.pool.buf, (addr << 12) + pre_addr + RecOff.next_addr, next_addr)
-                if next_addr != 0:
-                    struct.pack_into('i', self.pool.buf, (addr << 12) + next_addr + RecOff.pre_addr, pre_addr)
+                struct.pack_into('i', self.pool.buf, (addr << 12) + pre_addr + RecOff.next_addr, 0)
                 break
             valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + offset + RecOff.valid)[0]
 
@@ -144,11 +144,12 @@ class RecordManager(CatalogManager):
             p += gap
         return valid_num, invalid_num
 
-    def select_record(self, addr, cond_list):
+    def select_record(self, addr, cond_list, index_cond=None):
         """
-        在一页中按照条件选择记录
-        :param addr:
-        :param cond_list:
+        在一页中按照条件选择记录,
+        :param index_cond: 索引使用的条件
+        :param addr:页的地址
+        :param cond_list:其他的条件
         :return:符合条件的记录列表 res
         """
         res = []
@@ -156,40 +157,68 @@ class RecordManager(CatalogManager):
         fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
         while p != 0:
-            valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
-            if valid:
-                r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
-                if check_cond(r, cond_list):
-                    res.append(r)
+            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+            match = check_cond(r, cond_list)
+            if match:
+                res.append(r)
+            ahead = go_ahead(r, index_cond)
+            if not ahead:
+                break
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
         pass
         return res
 
 
-def check_cond(record, cond_list):
+def check_cond(r, cond_list):
     """
     对record进行检测
-    :param record:
-    :param cond_list: 列表，里面诸如[[1, op, value],...]
+    :param r:
+    :param cond_list:
     :return: True
     """
     for cond in cond_list:
         if cond[1] == "=":
-            if record[cond[0]] != cond[2]:
+            if r[cond[0]] != cond[2]:
                 return False
-        elif cond[1] == ">":
-            if record[cond[0]] <= cond[2]:
-                return False
-        elif cond[1] == "<":
-            if record[cond[0]] >= cond[2]:
-                return False
-        elif cond[1] == ">=":
-            if record[cond[0]] < cond[2]:
+        elif cond[0] == "<":
+            if r[cond[0]] >= cond[2]:
                 return False
         elif cond[1] == "<=":
-            if record[cond[0]] > cond[2]:
+            if r[cond[0]] > cond[2]:
+                return False
+        elif cond[0] == ">":
+            if r[cond[0]] <= cond[2]:
+                return False
+        elif cond[1] == ">=":
+            if r[cond[0]] < cond[2]:
                 return False
         elif cond[1] == "<>":
-            if record[cond[0]] == cond[2]:
+            if r[cond[0]] == cond[2]:
                 return False
-    return True
+        return True
+
+
+def go_ahead(r, index_cond):
+    """
+    判断是否对下一条记录进行检查，在一页中总是从左往右检查的
+    :param r:
+    :param index_cond:
+    :return:
+    """
+    if index_cond is None:
+        return True
+    if index_cond[1] == "=":
+        if r[index_cond[0]] == index_cond[2]:
+            return False
+    elif index_cond[1] == "<":
+        if r[index_cond[0]] >= index_cond[2]:
+            return False
+    elif index_cond[1] == "<=":
+        if r[index_cond[0]] > index_cond[2]:
+            return False
+    elif index_cond[1] == ">":
+        return True
+    elif index_cond[1] == ">=":
+        return True
+    elif index_cond[1] == "<>":
+        return True

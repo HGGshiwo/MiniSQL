@@ -1,13 +1,6 @@
-from API import Api
-
-
-class InterpreterManager(Api):
+class InterpreterManager(object):
     def __init__(self):
-        Api.__init__(self)
-        while True:
-            cmd = input()
-            # do something here
         pass
 
-    def get_command(self, cmd):
+    def get_cmd(self):
         pass
