@@ -42,7 +42,7 @@ class BufferManager(object):
             for table in self.catalog_list:
                 self.table_list[table] = shared_memory.ShareableList(sequence=None, name=table)
         except FileNotFoundError:
-            s = [-1] * 255  # 缓存空间的页数
+            s = [-1] * 256  # 缓存空间的页数
             self.pool = shared_memory.SharedMemory(create=True, name='pool', size=(2 << 20))
             self.addr_list = shared_memory.ShareableList(sequence=s, name='addr_list')
             self.dirty_list = shared_memory.ShareableList(sequence=s, name='dirty_list')
@@ -145,7 +145,6 @@ class BufferManager(object):
         page_no = self.file_list.index(-1)
         self.file_list[page_no] = 0
         addr = self.find_space(page_no)
-        self.pin_page(page_no)
         address = 'db_files/' + str(page_no) + '.dat'
         with open(address, 'a'):
             pass

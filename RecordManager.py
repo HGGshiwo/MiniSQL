@@ -48,7 +48,7 @@ class RecordManager(CatalogManager):
                 offset = p
                 while p != 0:
                     offset = p
-                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
                 last_record = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + offset + RecOff.record)
                 pre_addr = struct.unpack_from('i', self.pool.buf, (addr << 12) + offset + RecOff.pre_addr)[0]
                 struct.pack_into('i', self.pool.buf, (addr << 12) + pre_addr + RecOff.next_addr, 0)
@@ -195,7 +195,7 @@ def check_cond(r, cond_list):
         elif cond[1] == "<>":
             if r[cond[0]] == cond[2]:
                 return False
-        return True
+    return True
 
 
 def go_ahead(r, index_cond):
@@ -216,9 +216,5 @@ def go_ahead(r, index_cond):
     elif index_cond[1] == "<=":
         if r[index_cond[0]] > index_cond[2]:
             return False
-    elif index_cond[1] == ">":
-        return True
-    elif index_cond[1] == ">=":
-        return True
-    elif index_cond[1] == "<>":
-        return True
+
+    return True

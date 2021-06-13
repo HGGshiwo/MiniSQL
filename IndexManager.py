@@ -135,67 +135,66 @@ class IndexManager(RecordManager):
             if new_record is None:
                 break
 
-            # 如果原来的页已满，则分裂出新页，将new_record插入旧页
-            # left是新的，而且数据小
-            left_addr, left_page = self.new_buffer()
+            # 如果原来的页已满，则分裂出新页，将new_record插入新页
+            # right是新的，而且数据大
+            right_addr, right_page = self.new_buffer()
             # 首先对新页的页首赋值
-            self.pool.buf[(left_addr << 12) + Off.is_leaf: (left_addr << 12) + Off.fmt + cur_fmt_size] \
+            self.pool.buf[(right_addr << 12) + Off.is_leaf: (right_addr << 12) + Off.fmt + cur_fmt_size] \
                 = self.pool.buf[(cur_addr << 12) + Off.is_leaf:(cur_addr << 12) + Off.fmt + cur_fmt_size]
-            struct.pack_into('i', self.pool.buf, (left_addr << 12) + Off.current_page, left_page)
-            struct.pack_into('i', self.pool.buf, (left_addr << 12) + Off.next_page, cur_page)
-            struct.pack_into('i', self.pool.buf, (left_addr << 12) + Off.header, 0)
-            valid_num, invalid_num = self.count_valid(left_addr)  # 记录的数目
-            n = valid_num + invalid_num
+            struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.header, 0)
+            struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.current_page, right_page)
 
+            # 然后维护页链表
+            next_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.next_page)[0]
+            struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.next_page, next_page)
+            struct.pack_into('i', self.pool.buf, (cur_addr << 12) + Off.next_page, right_page)
+            if next_page != -1:
+                if self.addr_list.count(next_page) == 0:
+                    self.load_page(next_page)
+                next_addr = self.addr_list.index(next_page)
+                struct.pack_into('i', self.pool.buf, (next_addr << 12) + Off.previous_page, right_page)
+
+            valid_num, invalid_num = self.count_valid(right_addr)  # 记录的数目
+            n = valid_num + invalid_num
             # 转移一半的记录
             p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
             # 计算出旧页的第一条值，这也是旧页在父节点的索引
-            for i in range((n+1)//2):  # 注意新页多一条记录，因为记录插入到旧页
-                r = struct.unpack_from(cur_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)
-                self.insert_record(left_addr, r, cur_index)  # 插入到addr中
-                struct.pack_into('?', self.pool.buf, (cur_addr << 12) + p + RecOff.valid, False)  # 从addr中删除
+            # 找到前一半数据，在旧页不动， p是旧页理论上最后一条数据
+            for i in range((n + 1) // 2):
                 p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + p + RecOff.next_addr)[0]
 
-            # 修改旧页的数据,使得p成为right第一条数据地址
-            struct.pack_into('i', self.pool.buf, (cur_addr << 12) + Off.header, p)
-            struct.pack_into('i', self.pool.buf, (cur_addr << 12) + p + RecOff.pre_addr, 0)
-            struct.pack_into('i', self.pool.buf, (cur_addr << 12) + Off.previous_page, left_addr)
+            # 记录下p下一条数据q，q作为新页的第一条数据，将pnext指向0
+            q = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + p + RecOff.next_addr)[0]
+            struct.pack_into('i', self.pool.buf, (cur_addr << 12) + p + RecOff.next_addr, 0)
 
-            # 把不成功的这条插入到旧页中, 一定不会溢出
-            head_value, t = self.insert_record(cur_addr, new_record, cur_index)
-            # 把旧页原来在父节点的数据修改掉，如果新数据是最小的，就改为新数据，否则用旧页没有转移的第一条数据
-            r = struct.unpack_from(cur_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)
-            head_value = head_value if head_value is not None else r[cur_index]
-            self.replace_value(cur_page, index_fmt, head_value)
+            # 在新页插入后一半值
+            while q != 0:
+                r = struct.unpack_from(cur_fmt, self.pool.buf, (cur_addr << 12) + q + RecOff.record)
+                self.insert_record(right_addr, r, cur_index)  # 插入到addr中
+                struct.pack_into('?', self.pool.buf, (cur_addr << 12) + q + RecOff.valid, False)  # 从addr中删除
+                q = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + q + RecOff.next_addr)[0]
+
+            # 把不成功的这条插入到新页中, 一定不会溢出
+            head_value, t = self.insert_record(right_addr, new_record, cur_index)
 
             # 如果新页是非叶节点，把新页的孩子指向新页
-            is_leaf = struct.unpack_from('?', self.pool.buf, (left_addr << 12) + Off.is_leaf)[0]
+            is_leaf = struct.unpack_from('?', self.pool.buf, (right_addr << 12) + Off.is_leaf)[0]
             if not is_leaf:
-                p = struct.unpack_from('i', self.pool.buf, (left_addr << 12) + Off.header)[0]
+                p = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + Off.header)[0]
                 while p != 0:
-                    child_page = struct.unpack_from('i', self.pool.buf, (left_addr << 12) + p + RecOff.record)[0]
+                    child_page = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + p + RecOff.record)[0]
                     if self.addr_list.count(child_page) == 0:
                         self.load_page(child_page)
                     child_addr = self.addr_list.index(child_page)
-                    struct.pack_into('i', self.pool.buf, (child_addr << 12) + Off.parent, left_addr)
+                    struct.pack_into('i', self.pool.buf, (child_addr << 12) + Off.parent, right_addr)
                     p = struct.unpack_from('i', self.pool.buf, (child_addr << 12) + p + RecOff.next_addr)[0]
-            else:
-                # 如果是叶节点的分裂，则修改旧页前一页的数据。让它指向新页
-                pre_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.previous_page)[0]
-                if pre_page != -1:
-                    if self.addr_list.count(pre_page) == 0:  # 首先确保page_no在addr_list中
-                        self.load_page(pre_page)
-                    pre_addr = self.addr_list.index(pre_page)
-                    struct.pack_into('i', self.pool.buf, (pre_addr << 12) + Off.next_page, left_page)
-                else:
-                    self.table_list[table_name][TabOff.leaf_header] = left_page
 
             parent = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.parent)[0]
             if parent == -1:
                 # 如果是根的分裂，创建一个新根
                 parent = self.new_root(False, index_fmt)
                 self.table_list[table_name][5 + (index << 2)] = parent
-                struct.pack_into('i', self.pool.buf, (left_addr << 12) + Off.parent, parent)
+                struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.parent, parent)
                 struct.pack_into('i', self.pool.buf, (cur_addr << 12) + Off.parent, parent)
 
                 # 把两个孩子插入到新根中，不打算迭代了，因此不叫cur_value_list
@@ -205,15 +204,16 @@ class IndexManager(RecordManager):
                 value_list = [cur_addr, r[cur_index]]
                 self.insert_record(parent_addr, value_list, 1)
 
-                p = struct.unpack_from('i', self.pool.buf, (left_addr << 12) + Off.header)[0]
-                r = struct.unpack_from(cur_fmt, self.pool.buf, (left_addr << 12) + p + RecOff.record)
-                value_list = [left_addr, r[cur_index]]
+                p = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + Off.header)[0]
+                r = struct.unpack_from(cur_fmt, self.pool.buf, (right_addr << 12) + p + RecOff.record)
+                value_list = [right_addr, r[cur_index]]
                 self.insert_record(parent_addr, value_list, 1)
                 break
 
             # 如果父节点存在，则把新页需要插入的传递到下一个循环
-            r = struct.unpack_from(cur_fmt, self.pool.buf, (left_addr << 12) + Off.header)
-            cur_value_list = [left_addr, r[cur_index]]  # 想要插入到新页的数据
+            p = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + Off.header)[0]
+            r = struct.unpack_from(cur_fmt, self.pool.buf, (right_addr << 12) + p + RecOff.record)
+            cur_value_list = [right_addr, r[cur_index]]  # 想要插入到父页的数据
             if self.addr_list.count(parent) == 0:
                 self.load_page(parent)
             cur_addr = self.addr_list.index(parent)
@@ -443,7 +443,10 @@ class IndexManager(RecordManager):
             # 将name转为数字
             column = (table.index(column_name) - 2) // 4
             # 将value转为数字
-            value = eval(value)
+            if value.isdigit():
+                value = eval(value)
+            else:
+                value = value.encode()
             cond_list[i] = [column, op, value]
 
             index_page = table.index(column_name) + 3
@@ -466,7 +469,7 @@ class IndexManager(RecordManager):
             if self.addr_list.count(page_no) == 0:
                 self.load_page(page_no)
             addr = self.addr_list.index(page_no)
-            is_leaf = struct.unpack_from('?', (addr << 12) + Off.is_leaf)[0]
+            is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
             while not is_leaf:
                 p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
                 last_page = None
@@ -591,10 +594,10 @@ class IndexManager(RecordManager):
             page = leaf_header
             while page != -1:
                 if self.addr_list.count(page) == 0:
-                    self.load_page(leaf_header)
-                addr = self.addr_list.index(leaf_header)
+                    self.load_page(page)
+                addr = self.addr_list.index(page)
                 page_res = self.select_record(addr, cond_list)
                 res.extend(page_res)
-                page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)
+                page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
             pass
         return res
