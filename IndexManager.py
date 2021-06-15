@@ -452,3 +452,44 @@ class IndexManager(RecordManager):
             page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
         pass
         return res
+
+    def drop_tree(self, page_no, index_fmt):
+        """
+        删除以page_no为根节点的树
+        :param page_no:
+        :param index_fmt:
+        :return:
+        """
+        stack = []
+        stack.append(page_no)
+        while len(stack) != 0:
+            page_no = stack.pop()
+            if self.addr_list.count(page_no) == 0:
+                self.load_page(page_no)
+            addr = self.addr_list.index(page_no)
+            is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
+
+            if not is_leaf:
+                p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+                while p != 0:
+                    r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+                    stack.append(r[0])
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)
+
+            self.delete_buffer(page_no)
+        return
+
+    def create_tree(self, value_list, fmt, index_fmt):
+        """
+        创建一颗树，返回树的位置
+        :param index_fmt:
+        :param fmt:
+        :param value_list:
+        :return: 树的根节点
+        """
+        page_no = self.new_root(True, fmt)
+        for value in value_list:
+            new_page = self.insert_index(value, page_no, 1, index_fmt)
+            if new_page != -1:
+                page_no = new_page
+        return page_no
