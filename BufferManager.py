@@ -30,7 +30,8 @@ class BufferManager(object):
     内存管理类
     """
     def __init__(self):
-        self.lock = None
+        self.lock_list = None
+        self.grant_list = []
         try:
             self.pool = shared_memory.SharedMemory(create=False, name='pool')
             self.addr_list = shared_memory.ShareableList(sequence=None, name='addr_list')
@@ -63,32 +64,75 @@ class BufferManager(object):
         :param addr: 地址
         :return: None
         """
-        if self.lock is not None:
-            lock = self.lock[addr]
-            lock.acquire()
-
-    def unpin_page(self, addr):
-        """
-        将地址unpin
-        :param addr:
-        :return:
-        """
-        if self.lock is not None:
-            lock = self.lock[addr]
-            lock.release()
+        if self.lock_list is not None:
+            lock = self.lock_list[addr]
+            if lock not in self.grant_list:
+                lock.acquire()
+                self.grant_list.append(lock)
 
     def pin_file(self):
         """
         将文件列表pin住
         :return:
         """
-        if self.lock is not None:
-            lock = self.lock[LockOff.file_list]
-            lock.acquire()
+        if self.lock_list is not None:
+            lock = self.lock_list[LockOff.file_list]
+            if lock not in self.grant_list:
+                lock.acquire()
+                self.grant_list.append(lock)
 
-    def unpin_file(self):
-        if self.lock is not None:
-            lock = self.lock[LockOff.file_list]
+    def pin_table(self, table_name):
+        """
+        将表pin住
+        :return:
+        """
+        if self.lock_list is not None:
+            self.pin_catalog()
+            table = self.catalog_list.index(table_name)
+            lock = self.lock_list[table << 2]
+            if lock not in self.grant_list:
+                lock.acquire()
+                self.grant_list.append(lock)
+
+    def pin_catalog(self):
+        """
+        将表pin住
+        :return:
+        """
+        if self.lock_list is not None:
+            lock = self.lock_list[LockOff.catalog_list]
+            if lock not in self.grant_list:
+                lock.acquire()
+                self.grant_list.append(lock)
+
+    def pin_dirty(self):
+        """
+        pin脏页表
+        :return:
+        """
+        if self.lock_list is not None:
+            lock = self.lock_list[LockOff.dirty_list]
+            if lock not in self.grant_list:
+                lock.acquire()
+                self.grant_list.append(lock)
+
+    def pin_refer(self):
+        """
+        pin引用表
+        :return:
+        """
+        if self.lock_list is not None:
+            lock = self.lock_list[LockOff.refer_list]
+            if lock not in self.grant_list:
+                lock.acquire()
+                self.grant_list.append(lock)
+
+    def release_lock(self):
+        """
+        释放所有锁
+        :return:
+        """
+        for lock in self.grant_list:
             lock.release()
 
     def find_space(self, page_no):
@@ -160,7 +204,6 @@ class BufferManager(object):
         addr = self.addr_list.index(page_no)
         self.file_list[page_no] = -1
         self.unload_buffer(addr)
-        self.unpin_page(page_no)
 
     def unload_buffer(self, addr):
         """

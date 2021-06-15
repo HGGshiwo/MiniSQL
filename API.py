@@ -1,21 +1,21 @@
 import struct
 import time
 from enum import IntEnum
-from IndexManager import IndexManager, TabOff
+from IndexManager import IndexManager
 from BufferManager import Off, write_json
 from RecordManager import RecOff
 from InterpreterManager import InterpreterManager
+from multiprocessing import shared_memory
+import re
 
 
-class Error(IntEnum):
-    no_error = 0
-    table_name_duplicate = 1
-    table_name_not_exists = 2
-    column_name_duplicate = 3
-    column_name_not_exists = 4
-    type_not_support = 5
-    user_not_exist = 6
-    password_not_correct = 7
+class TabOff(IntEnum):
+    primary_key = 0
+    leaf_header = 1
+    name = 0
+    fmt = 1
+    unique = 2
+    index_page = 3
 
 
 class Api(IndexManager, InterpreterManager):
@@ -66,24 +66,37 @@ class Api(IndexManager, InterpreterManager):
             print(r)
             p = next_addr
 
-    def exe_cmd(self):
-        """
-        执行命令
-        :return:
-        """
-        args = self.get_cmd()
-        self.create_table(*args)
-        pass
-
     def create_table(self, table_name, primary_key, table_info):
         """
-        创建一个表
-        :param table_name: 表名
-        :param primary_key: 主键位于第几个元素
-        :param table_info: (name, fmt, unique, index_page)，其中index_page全部是-1
+        为新表格在catalog中注册
+        :param table_name:
+        :param primary_key:
+        :param table_info: 顺序是name, fmt, unique, index_page全部是-1
         :return:
         """
-        self.new_table(table_name, primary_key, table_info)
+        if self.catalog_list.count(-1) == 0:
+            raise Exception('B1')
+
+        if self.catalog_list.count(table_name) == 1:
+            raise Exception('T1')
+
+        # 在catalog_list中注册该表
+        index = self.catalog_list.index(-1)
+        self.catalog_list[index] = table_name
+
+        # 为该表开辟文件空间存储
+        fmt = ''
+        for i in range(len(table_info)):
+            if i % 4 == 1:
+                fmt = fmt + table_info[i]
+        page_no = self.new_root(True, fmt)
+
+        # 将该表的信息写入内存
+        table = [primary_key, page_no]
+        table = table + table_info
+        table[(primary_key << 2) + 5] = page_no  # 为primary key的属性index_page赋值
+        self.table_list[table_name] = shared_memory.ShareableList(sequence=table, name=table_name)
+        pass
 
     def delete(self, table_name, condition):
         """
@@ -92,16 +105,24 @@ class Api(IndexManager, InterpreterManager):
         :param condition:
         :return:
         """
-        if self.catalog_list.count(table_name) != 0:
-            delete_list = self.select_page(table_name, condition)  # 返回对应的记录
-            table = self.table_list[table_name]
-            for delete_record in delete_list:
-                catalog_num = (len(table) - 2) // 4
-                for i in range(0, catalog_num):
-                    if table[(i << 2) + 5] != -1:
-                        self.delete_index(table_name, i, delete_record[i])
-            return
-        print('表名为 ' + table_name + ' 的表不存在.')
+        if table_name not in self.table_list.keys():
+            raise Exception('T2')
+
+        table = self.table_list[table_name]
+        delete_list = self.select(table_name, condition)  # 返回对应的记录
+
+        for delete_record in delete_list:
+            catalog_num = (len(table) - 2) // 4
+            for i in range(0, catalog_num):
+                if table[(i << 2) + 5] != -1:
+                    page_no = table[2 + (i >> 2) + TabOff.index_page]  # 根节点
+                    index_fmt = 'i' + str(table[2 + (i >> 2) + TabOff.fmt])
+                    leaf_header, index_page = self.delete_index(page_no, i, index_fmt, delete_record[i])
+                    if leaf_header != -1:
+                        self.table_list[table_name][TabOff.leaf_header] = leaf_header
+                    if index_page != -1:
+                        self.table_list[table_name][(i << 2) + 5] = index_page
+        return
 
     def insert(self, table_name, value_list):
         """
@@ -110,30 +131,90 @@ class Api(IndexManager, InterpreterManager):
         :param value_list:
         :return:
         """
-        if self.catalog_list.count(table_name) != 0:
-            table = self.table_list[table_name]
-            primary_key = table[TabOff.primary_key]
-            # 在主索引树插入
-            self.insert_index(value_list, table_name, primary_key)
-            # 在二级索引树插入
-            catalog_num = (len(table)-2) // 4
-            for i in range(0, catalog_num):
-                if i != primary_key and table[(i << 2) + 5] != -1:
-                    index_value = [value_list[primary_key], value_list[i]]
-                    self.insert_index(index_value, table_name, i)
-            return
+        if self.catalog_list.count(table_name) == 0:
+            raise Exception('T2')
 
-        print('表名为 ' + table_name + ' 的表不存在.')
+        table = self.table_list[table_name]
+        primary_key = table[TabOff.primary_key]
 
-    def select(self, table_name, condition):
+        # 在主索引树插入
+        page_no = table[2 + (primary_key << 2) + TabOff.index_page]  # 根节点
+        # 索引的解码方式，页号+索引值
+        index_fmt = 'i' + str(table[2 + (primary_key << 2) + TabOff.fmt])
+        new_root = self.insert_index(value_list, page_no, primary_key, index_fmt)
+        if new_root != -1:
+            self.table_list[table_name][2 + (primary_key << 2) + TabOff.index_page] = new_root
+
+        # 在二级索引树插入
+        catalog_num = (len(table)-2) // 4
+        for i in range(0, catalog_num):
+            if i != primary_key and table[(i << 2) + 5] != -1:
+                index_fmt = 'i' + str(table[2 + (i << 2) + TabOff.fmt])
+                value = [value_list[primary_key], value_list[i]]
+                page_no = table[2 + (i << 2) + TabOff.index_page]
+                new_root = self.insert_index(value, page_no, i, index_fmt)
+                if new_root != -1:
+                    self.table_list[table_name][2 + (i << 2) + TabOff.index_page] = new_root
+        return
+
+    def select(self, table_name, cond_list):
         """
         直接进行查找
+        :param cond_list:
         :param table_name:
-        :param condition:
         :return:
         """
-        return self.select_page(table_name, condition)
-        pass
+        if table_name not in self.table_list.keys():
+            raise Exception('T2')
+        table = self.table_list[table_name]
+        primary_key = table[TabOff.primary_key]
+        primary_page = table[(primary_key << 2) + 5]  # 主索引所在根
+        primary_index_fmt =  'i' + table[(primary_key << 2) + 3]
+        # 命令预处理
+        index_cond = None
+        primary_cond = None
+        page_no = -1  # 索引的根
+        index_fmt = None
+        for i, cond in enumerate(cond_list):
+            cond = re.match(r'^([A-Za-z0-9_]+)\s*([<>=]+)\s*(.+)$', cond, re.S)
+            column_name, op, value = cond.groups()
+
+            # 将name转为数字
+            column = (table.index(column_name) - 2) // 4
+            # 将value转为数字
+            if value.isdigit():
+                value = eval(value)
+            else:
+                value = value.encode()
+            cond_list[i] = [column, op, value]
+
+            index_page = table.index(column_name) + 3
+            fmt = table.index(column_name) + 1
+            if cond_list[i][1] != '<>':  # 不等于也是遍历全部
+                if table[index_page] != -1:
+                    if column == primary_key:
+                        primary_cond = cond_list[i]
+                        page_no = table[index_page]
+                        index_fmt = 'i' + table[fmt]
+                    elif index_cond is None:
+                        index_cond = cond_list[i]
+                        cond_list.pop(cond_list[i])
+                        page_no = table[index_page]
+
+        # 如果是主索引查询，首先到根
+        ret = []
+        if primary_cond is not None:
+            ret = self.select_page(primary_page, primary_index_fmt, primary_cond, cond_list)
+        elif index_cond is not None:
+            primary_value = self.select_page(page_no, index_fmt, index_cond, cond_list)
+            for value in primary_value:
+                primary_cond = [primary_key, '=', value]
+                page_ret = self.select_page(primary_page, primary_index_fmt, primary_cond, [primary_cond])
+                ret.extend(page_ret)
+        else:
+            leaf_header = table[TabOff.leaf_header]
+            ret = self.liner_select(leaf_header, cond_list)
+        return ret
 
     def create_index(self, table_name, index_name):
         """

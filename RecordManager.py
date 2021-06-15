@@ -126,7 +126,7 @@ class RecordManager(CatalogManager):
         """
         统计一页中有几条有效记录
         :param addr:
-        :return:
+        :return:valid_num, invalid_num
         """
         valid_num = 0
         invalid_num = 0
