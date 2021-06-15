@@ -474,7 +474,7 @@ class IndexManager(RecordManager):
                 while p != 0:
                     r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
                     stack.append(r[0])
-                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)
+                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
 
             self.delete_buffer(page_no)
         return

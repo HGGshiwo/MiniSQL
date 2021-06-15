@@ -196,11 +196,11 @@ class Api(IndexManager):
                     if column == primary_key:
                         primary_cond = cond_list[i]
                         page_no = table[index_page]
-                        index_fmt = 'i' + table[fmt]
                     elif index_cond is None:
                         index_cond = cond_list[i]
                         index_cond[0] = 0  # 在二级索引树，索引的位置变成了0
                         page_no = table[index_page]
+                        index_fmt = 'i' + table[fmt]
 
         ret = []
         # 如果是主索引查询，首先到根
@@ -209,7 +209,7 @@ class Api(IndexManager):
         elif index_cond is not None:
             primary_value = self.select_page(page_no, index_fmt, index_cond, cond_list)
             for value in primary_value:
-                primary_cond = [primary_key, '=', value]
+                primary_cond = [primary_key, '=', value[1]]
                 page_ret = self.select_page(primary_page, primary_index_fmt, primary_cond, [primary_cond])
                 ret.extend(page_ret)
         else:
@@ -225,7 +225,7 @@ class Api(IndexManager):
         :return:
         """
         if self.catalog_list.count(table_name) == 0:
-            raise Exception('T2')  # 表存在
+            raise Exception('T2')  # 表不存在
         table = self.table_list[table_name]
 
         res = []
@@ -235,12 +235,12 @@ class Api(IndexManager):
         col_num = (len(table) - 2) // 4
         fmt = ''
         for i in range(col_num):
-            fmt = fmt + table[(col_num << 2) + 3]
+            fmt = fmt + table[(i << 2) + 3]
         primary_key = table[TabOff.primary_key]
 
         if table[(index << 2) + 5] != -1:
             raise Exception('I1')
-        elif table[(index << 2) + 4] is True:
+        elif table[(index << 2) + 4] is not True:
             raise Exception('I2')
         if primary_key == index:
             raise Exception('I3')
@@ -273,7 +273,9 @@ class Api(IndexManager):
             raise Exception('T2')
         table = self.table_list[table_name]
         page_no = table[(index << 2) + 5]
-        self.drop_tree(page_no, index)
+        fmt = table[(index << 2) + 3]
+        index_fmt = 'i' + fmt
+        self.drop_tree(page_no, index_fmt)
         self.table_list[table_name][(index << 2) + 5] = -1
 
     def drop_table(self, table_name):
@@ -287,14 +289,14 @@ class Api(IndexManager):
         table = self.table_list[table_name]
         col_num = (len(table) - 1)//4
         for i in range(col_num):
-            page_no = table[(col_num << 2) + 5]
-            fmt = table[(col_num << 2) + 3]
+            page_no = table[(i << 2) + 5]
+            fmt = table[(i << 2) + 3]
             index_fmt = 'i' + fmt
             if page_no != -1:
                 self.drop_tree(page_no, index_fmt)
         table_index = self.catalog_list.index(table_name)
         self.catalog_list[table_index] = -1
-        self.table_list[table_name].unlink()
+        self.table_list[table_name].shm.unlink()
         return
 
     def quit(self):
