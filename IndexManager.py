@@ -211,129 +211,140 @@ class IndexManager(RecordManager):
         fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
 
-        # 如果需要进行操作
         cur_fmt = fmt  # 当前页解码方式（父页一定是index_fmt）
-        cur_index = index  # 当前页索引，父页一定是1
+        cur_index = index  # 当前页索引，父页一定是1，插入排序时候用到
         cur_page = page_no  # 当前页号
         cur_addr = addr  # 当前页地址
-        cur_value = value
+        cur_value = value  # 删除位置的值
+        cur_delete = index  # 定位删除的位置, 在叶子删除是看index的value，在非叶子看页号
         #  开始迭代, 删除一条记录，检查是否合并，检查是否需要删除
         while True:
             # 删除一条记录
-            half_empty, head_value = self.delete_record(cur_addr, cur_index, cur_value)  # 在addr中删除一条记录
+            half_empty, head_value = self.delete_record(cur_addr, cur_delete, cur_value)  # 在addr中删除一条记录
             if head_value is not None:
                 self.replace_value(cur_page, index_fmt, head_value)
 
-            # 检查该页是否需要被删除，删除的条件是：根节点且只有一个孩子
             parent = struct.unpack_from(index_fmt, self.pool.buf, (cur_addr << 12) + Off.parent)[0]
-            if parent == -1:
+            is_leaf = struct.unpack_from('?', self.pool.buf, (cur_addr << 12) + Off.is_leaf)[0]
+
+            # 检查该页是否需要被删除，删除的条件是：根节点且只有一个孩子, 且不是叶子
+            if parent == -1 and not is_leaf:
                 valid_num, invalid_num = self.count_valid(cur_addr)
                 if valid_num == 1:
                     p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
                     index_page = struct.unpack_from(index_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)[0]
+                    if self.addr_list.count(index_page) == 0:
+                        self.load_page(index_page)
                     index_page_addr = self.addr_list.index(index_page)
                     self.delete_buffer(cur_addr)
                     # 让孩子变为根节点
                     struct.pack_into('i', self.pool.buf, (index_page_addr << 12) + Off.parent, -1)
-                    break
+                break
+
+            # 检查是否合并或者转移, 非叶只要是2个以上都是合法的
+            if not half_empty or parent == -1:
+                break
 
             if self.addr_list.count(parent) == 0:
                 self.load_page(parent)
             parent_addr = self.addr_list.index(parent)
 
-            # 检查是否合并或者转移
-            if half_empty:
-                # 找到该条记录的旁边一条记录
-                merge_left = None
-                p = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + Off.header)[0]
-                record = None
-                while p != 0:
-                    r = struct.unpack_from(index_fmt, self.pool.buf, (parent_addr << 12) + p + RecOff.record)
-                    pre_addr = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + p + RecOff.pre_addr)[0]
-                    next_addr = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + p + RecOff.next_addr)[0]
-                    if r[0] == cur_page:
-                        if pre_addr != 0:
-                            merge_left = True  # 默认merge_left
-                            record = struct.unpack_from(
-                                index_fmt, self.pool.buf, (parent_addr << 12) + pre_addr + RecOff.record)
-                        else:
-                            merge_left = False
-                            record = struct.unpack_from(
-                                index_fmt, self.pool.buf, (parent_addr << 12) + next_addr + RecOff.record)
-                        break
-                    p = struct.unpack_from('i', self.pool.buf, (parent_addr << 2) + p + RecOff.next_addr)[0]
-
-                # 计算帮助其合并的页的页号
-                merge_page = record[0]
-                if self.addr_list.count(merge_page) == 0:
-                    self.load_page(merge_page)
-                merge_addr = self.addr_list.index(merge_page)
-                valid_num, invalid_num = self.count_valid(merge_addr)
-
-                # 如果大于一半，转移一条记录
-                if valid_num >= invalid_num:
-                    if merge_left:
-                        # 如果左边页转移数据，那么删除最后一条数据，将其加入到被merge页
-                        p = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + Off.header)[0]
-                        q = p  # q是p的前一条，需要找最后一条记录p
-                        while True:
-                            next_addr = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + p + RecOff.next_addr)
-                            if next_addr == 0:
-                                # 找到了最后一条记录p
-                                struct.pack_into('i', self.pool.buf, (merge_addr << 12) + q + RecOff.next_addr, 0)
-                                struct.pack_into('?', self.pool.buf, (merge_addr << 12) + p + RecOff.valid, False)
-                                r = struct.unpack_from(cur_fmt, self.pool.buf, (merge_addr << 12) + p + RecOff.record)
-                                self.insert_record(cur_addr, r, cur_index)
-                                # 循环上去修改索引
-                                self.replace_value(cur_page, index_fmt, head_value)
-                                break
-
-                            q = p
-                            p = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + p + RecOff.next_addr)[0]
+            # 找到该条记录的旁边一条记录
+            merge_left = None
+            p = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + Off.header)[0]
+            record = None
+            while p != 0:
+                r = struct.unpack_from(index_fmt, self.pool.buf, (parent_addr << 12) + p + RecOff.record)
+                pre_addr = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + p + RecOff.pre_addr)[0]
+                next_addr = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + p + RecOff.next_addr)[0]
+                if r[0] == cur_page:
+                    if pre_addr != 0:
+                        merge_left = True  # 默认merge_left
+                        record = struct.unpack_from(
+                            index_fmt, self.pool.buf, (parent_addr << 12) + pre_addr + RecOff.record)
                     else:
-                        # 如果右边转移数据，那么删除第一条数据，将其插入merge页
-                        p = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + Off.header)[0]
-                        next_addr = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + p + RecOff.next_addr)[0]
-                        r = struct.unpack_from(cur_fmt, self.pool.buf, (merge_addr << 12) + p + RecOff.record)
-                        struct.pack_into('i', self.pool.buf, (merge_addr << 12) + Off.header, next_addr)
-                        self.insert_record(cur_addr, r, cur_index)
+                        merge_left = False
+                        record = struct.unpack_from(
+                            index_fmt, self.pool.buf, (parent_addr << 12) + next_addr + RecOff.record)
                     break
+                p = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + p + RecOff.next_addr)[0]
+
+            # 计算帮助其合并的页的页号
+            merge_page = record[0]
+            if self.addr_list.count(merge_page) == 0:
+                self.load_page(merge_page)
+            merge_addr = self.addr_list.index(merge_page)
+            valid_num, invalid_num = self.count_valid(merge_addr)
+
+            # 如果大于一半，转移一条记录
+            if valid_num > invalid_num:
+                if merge_left:
+                    # 如果左边页转移数据，那么删除最后一条数据，将其加入到被merge页
+                    p = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + Off.header)[0]
+                    q = p  # q是p的前一条，需要找最后一条记录p
+                    while True:
+                        next_addr = struct.unpack_from(
+                            'i', self.pool.buf, (merge_addr << 12) + p + RecOff.next_addr)[0]
+                        if next_addr == 0:
+                            # 找到了最后一条记录p
+                            struct.pack_into('i', self.pool.buf, (merge_addr << 12) + q + RecOff.next_addr, 0)
+                            struct.pack_into('?', self.pool.buf, (merge_addr << 12) + p + RecOff.valid, False)
+                            r = struct.unpack_from(cur_fmt, self.pool.buf, (merge_addr << 12) + p + RecOff.record)
+                            head_value, t = self.insert_record(cur_addr, r, cur_index)
+                            # 循环上去修改索引
+                            self.replace_value(cur_page, index_fmt, head_value)
+                            break
+                        q = p
+                        p = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + p + RecOff.next_addr)[0]
+                    pass
                 else:
-                    # 如果半满， 发生合并
-                    # 将被合并页所有数据转移到merge_page中
-                    p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
+                    # 如果右边转移数据，那么删除第一条数据，将其插入merge页
+                    p = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + Off.header)[0]
+                    next_addr = struct.unpack_from('i', self.pool.buf, (merge_addr << 12) + p + RecOff.next_addr)[0]
+                    r = struct.unpack_from(cur_fmt, self.pool.buf, (merge_addr << 12) + p + RecOff.record)
+                    struct.pack_into('i', self.pool.buf, (merge_addr << 12) + Off.header, next_addr)
+                    struct.pack_into('i', self.pool.buf, (merge_addr << 12) + p + RecOff.valid, False)
+                    self.insert_record(cur_addr, r, cur_index)
+                break
+            else:
+                # 如果半满， 发生合并
+                # 将被合并页所有数据转移到merge_page中
+                p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
+                r = struct.unpack_from(cur_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)
+                while p != 0:
                     r = struct.unpack_from(cur_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)
-                    cur_value = r[cur_index]
-                    while p != 0:
-                        r = struct.unpack_from(cur_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)
-                        self.insert_record(merge_addr, r, cur_index)
-                        p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + p + RecOff.next_addr)
+                    head_value, t = self.insert_record(merge_addr, r, cur_index)
+                    if head_value is not None:
+                        self.replace_value(merge_page, index_fmt, head_value)
+                    p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + p + RecOff.next_addr)[0]
 
-                    # 将其从文件链表中删除
-                    pre_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.previous_page)
-                    next_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.next_page)
-                    if pre_page == -1:
-                        leaf_header = next_page
-                    else:
-                        if self.addr_list.count(pre_page) == 0:
-                            self.load_page(pre_page)
-                        pre_addr = self.addr_list.index(pre_page)
-                        struct.pack_into('i', self.pool.buf, (pre_addr << 12) + Off.next_page, next_page)
-                    if next_page != -1:
-                        if self.addr_list.count(next_page) == 0:
-                            self.load_page(next_page)
-                        next_addr = self.addr_list.index(next_page)
-                        struct.pack_into('i', self.pool.buf, (next_addr << 12) + Off.previous_page, pre_page)
+                # 将其从文件链表中删除
+                pre_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.previous_page)[0]
+                next_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.next_page)[0]
+                if pre_page == -1:
+                    leaf_header = next_page
+                else:
+                    if self.addr_list.count(pre_page) == 0:
+                        self.load_page(pre_page)
+                    pre_addr = self.addr_list.index(pre_page)
+                    struct.pack_into('i', self.pool.buf, (pre_addr << 12) + Off.next_page, next_page)
+                if next_page != -1:
+                    if self.addr_list.count(next_page) == 0:
+                        self.load_page(next_page)
+                    next_addr = self.addr_list.index(next_page)
+                    struct.pack_into('i', self.pool.buf, (next_addr << 12) + Off.previous_page, pre_page)
 
-                    # 在缓存和文件物理列表中删除这个文件
-                    self.delete_buffer(cur_page)
+                # 在缓存和文件物理列表中删除这个文件
+                self.delete_buffer(cur_page)
 
-                    # 继续迭代
-                    cur_page = parent
-                    cur_addr = parent_addr
-                    cur_index = 1
-            pass
-            return leaf_header, parent
+                # 继续迭代
+                cur_value = cur_page  # 删除当前页
+                cur_page = parent
+                cur_addr = parent_addr
+                cur_index = 1
+                cur_delete = 0
+
+        return leaf_header, index_page
 
     def replace_value(self, page_no, index_fmt, head_value):
         """
@@ -440,3 +451,4 @@ class IndexManager(RecordManager):
             res.extend(page_res)
             page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
         pass
+        return res

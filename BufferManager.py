@@ -41,6 +41,8 @@ class BufferManager(object):
             self.catalog_list = shared_memory.ShareableList(sequence=None, name='catalog_list')
             self.table_list = {}
             for table in self.catalog_list:
+                if table == -1:
+                    continue
                 self.table_list[table] = shared_memory.ShareableList(sequence=None, name=table)
         except FileNotFoundError:
             s = [-1] * 256  # 缓存空间的页数

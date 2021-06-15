@@ -37,7 +37,9 @@ class RecordManager(CatalogManager):
         # offset是物理地址相对addr的偏移
         offset = fmt_size + Off.fmt
         valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + offset + RecOff.valid)[0]  # 是否有效
-        gap = struct.calcsize('?3i' + fmt)
+        gap = struct.calcsize('3i')
+        gap += struct.calcsize('?')
+        gap += struct.calcsize(fmt)
         while valid:
             offset = offset + gap
             if offset + gap > 4096:
@@ -115,7 +117,7 @@ class RecordManager(CatalogManager):
                 else:
                     next_record = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + next_addr + RecOff.record)
                     head_value = next_record[index]
-                    struct.pack_into('i', self.pool.buf, Off.header, next_addr)
+                    struct.pack_into('i', self.pool.buf, (addr << 12) + Off.header, next_addr)
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
         # 通过物理地址检测是否需要合并
         valid_num, invalid_num = self.count_valid(addr)
@@ -134,7 +136,9 @@ class RecordManager(CatalogManager):
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
         fmt = str(fmt, encoding='utf8')
         p = fmt_size + Off.fmt
-        gap = struct.calcsize('?3i' + fmt)
+        gap = struct.calcsize('?')
+        gap += struct.calcsize('3i')
+        gap += struct.calcsize(fmt)
         while p < 4096:
             valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
             if valid:

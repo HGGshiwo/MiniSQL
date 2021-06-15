@@ -41,6 +41,8 @@ class Api(IndexManager, InterpreterManager):
         print("header\t\t\t" + str(header))
         is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
         print("is_leaf\t\t\t" + str(is_leaf))
+        parent = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.parent)[0]
+        print("parent\t\t\t" + str(parent))
         previous_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.previous_page)[0]
         print("previous_page\t" + str(previous_page))
         fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
@@ -113,9 +115,12 @@ class Api(IndexManager, InterpreterManager):
             catalog_num = (len(table) - 2) // 4
             for i in range(0, catalog_num):
                 if table[(i << 2) + 5] != -1:
-                    page_no = table[2 + (i >> 2) + TabOff.index_page]  # 根节点
+                    page_no = self.table_list[table_name][2 + (i >> 2) + TabOff.index_page]  # 根节点会随时改
                     index_fmt = 'i' + str(table[2 + (i >> 2) + TabOff.fmt])
                     leaf_header, index_page = self.delete_index(page_no, i, index_fmt, delete_record[i])
+                    # root_addr = self.addr_list.index(page_no)
+                    # self.print_header(root_addr)
+                    # self.print_record(root_addr)
                     if leaf_header != -1:
                         self.table_list[table_name][TabOff.leaf_header] = leaf_header
                     if index_page != -1:
@@ -366,9 +371,23 @@ class Api(IndexManager, InterpreterManager):
             print(r)
             p = next
 
+    def quit(self):
+        for i in range(len(self.addr_list)):
+            if self.dirty_list[i] and self.addr_list[i] != -1:
+                self.unload_buffer(i)
+        write_json('buffer', {"file_list": list(self.file_list)})
+        catalog_info = {}
+        catalog_info["catalog_list"] = list(self.catalog_list)
+        for table in self.catalog_list:
+            if table != -1:
+                catalog_info[table] = list(self.table_list[table])
+        write_json('catalog', catalog_info)
+        print("退出成功.")
+        pass
+
+
 def firstelement(elem):
     return elem(0)
-
 
 
 def secondelement(elem):
