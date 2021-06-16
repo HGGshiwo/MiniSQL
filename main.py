@@ -1,6 +1,7 @@
 import struct
 import time
 from API import Api
+from InterpreterManager import InterpreterManager
 
 if __name__ == "__main__":
     user = Api()
@@ -14,13 +15,15 @@ if __name__ == "__main__":
     # user.print_record(2)
     # user.load_page(0)
     # user.print_record
+    # user.drop_table('test')
+
     t = time.time()
     user.create_table('test', 0, ['index','i',True, -1, 'a','i', True, -1])
     for i in range(1000):
         user.insert('test', [i, i])
     print('insert 1000 tuples in ' + str(time.time()-t))
 
-    user.drop_table('test')
+    # user.drop_table('test')
 
     t = time.time()
     user.create_index('test', 1)
@@ -37,14 +40,15 @@ if __name__ == "__main__":
     print('select finished in '+str(time.time() - t))
     print(ret)
 
-    pass
+    # user.drop_table('test')
+    # pass
     # user.quit()
     # user.load_page(2)
     # user.print_record(0)
     # user.print_header(0)
 
 
-    pass
+    # pass
 #    user.quit()
     # print('after insert:')
     # user.print_record(0)
@@ -80,4 +84,6 @@ if __name__ == "__main__":
     # print('after delete')
     # user.print_record(0)
     # user.quit()
+    InterpreterManager.prompt = 'MiniSQL > '
+    InterpreterManager().cmdloop()
     pass
