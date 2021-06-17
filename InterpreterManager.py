@@ -312,3 +312,50 @@ def concat_list(lists):
     for i in lists:
         statement = statement + i
     return statement
+
+
+def print_record(data_list):
+    """
+    友好的输出记录
+    :param data_list: 第一个是列名，然后是记录
+    :return:
+    """
+    r_len = len(data_list[0])
+    len_list = [0] * r_len
+    for r in data_list:
+        for j in range(r_len):
+            if len('    ' + str(r[j]) + '    ') > len_list[j]:
+                len_list[j] = len('    ' + str(r[j]) + '    ')
+
+    # 画出最上面一条线
+    print('\n+', end='')
+    for j in range(r_len):
+        print('-' * (len_list[j]) + '+', end='')
+
+    # 画出元素名字
+    print('\n|', end='')
+    for j in range(r_len - 1):
+        print(str(data_list[0][j]).center(len_list[j]) + '|', end='')
+    print(str(data_list[0][len(data_list) - 1]).center(len_list[r_len - 1]) + '|')
+
+    # 画出下面一条线
+    print('+', end='')
+    for i in range(0, r_len - 1):
+        print('-' * (len_list[i]) + '+', end='')
+    print('-' * (len_list[r_len - 1]) + '+')
+
+    # 画出数据
+    for i in range(1, len(data_list)):
+        print('|', end='')
+        for j in range(r_len - 1):
+            print(str(data_list[i][j]).center(len_list[j]) + '|', end='')
+        print(str(data_list[i][len(data_list)-1]).center(len_list[r_len - 1]) + '|')
+
+    # 画出最下面一条线
+    print('+', end='')
+    for j in range(r_len - 1):
+        print('-' * (len_list[j]) + '+', end='')
+    print('-' * (len_list[r_len - 1]) + '+')
+
+print_record([['a', 'b', 'c'], [1, '2eeee', 2], [1, 2, 2]])
+pass
