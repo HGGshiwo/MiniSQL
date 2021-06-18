@@ -16,20 +16,3 @@ class Table(IntEnum):
 class CatalogManager(BufferManager):
     def __init__(self):
         BufferManager.__init__(self)
-
-    def pin_catalog(self, table_name):
-        pid = os.getpid()
-        index = self.catalog_list.index(table_name)
-        while self.catalog_occupy_list[index] != pid:
-            if self.catalog_occupy_list[index] == -1:
-                self.catalog_occupy_list[index] = pid
-
-    def unpin_catalog(self, table_name):
-        index = self.catalog_list.index(table_name)
-        self.catalog_occupy_list[index] = -1
-
-    def pin_user(self, user_name):
-        pass
-
-    def unpin_user(self, user_name):
-        pass

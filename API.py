@@ -132,34 +132,31 @@ class Api(IndexManager):
         :param value_list:
         :return:
         """
-        try:
-            if self.catalog_list.count(table_name) == 0:
-                raise Exception('T2')
+        if self.catalog_list.count(table_name) == 0:
+            raise Exception('T2')
 
-            table = self.table_list[table_name]
-            primary_key = table[TabOff.primary_key]
+        table = self.table_list[table_name]
+        primary_key = table[TabOff.primary_key]
 
-            # 在主索引树插入
-            page_no = table[2 + (primary_key << 2) + TabOff.index_page]  # 根节点
-            # 索引的解码方式，页号+索引值
-            index_fmt = 'i' + str(table[2 + (primary_key << 2) + TabOff.fmt])
-            new_root = self.insert_index(value_list, page_no, primary_key, index_fmt)
-            if new_root != -1:
-                self.table_list[table_name][2 + (primary_key << 2) + TabOff.index_page] = new_root
+        # 在主索引树插入
+        page_no = table[2 + (primary_key << 2) + TabOff.index_page]  # 根节点
+        # 索引的解码方式，页号+索引值
+        index_fmt = 'i' + str(table[2 + (primary_key << 2) + TabOff.fmt])
+        new_root = self.insert_index(value_list, page_no, primary_key, index_fmt)
+        if new_root != -1:
+            self.table_list[table_name][2 + (primary_key << 2) + TabOff.index_page] = new_root
 
-            # 在二级索引树插入
-            catalog_num = (len(table)-2) // 4
-            for i in range(0, catalog_num):
-                if i != primary_key and table[(i << 2) + 5] != -1:
-                    index_fmt = 'i' + str(table[2 + (i << 2) + TabOff.fmt])
-                    value = [value_list[primary_key], value_list[i]]
-                    page_no = table[2 + (i << 2) + TabOff.index_page]
-                    new_root = self.insert_index(value, page_no, i, index_fmt)
-                    if new_root != -1:
-                        self.table_list[table_name][2 + (i << 2) + TabOff.index_page] = new_root
-            return
-        except Exception as e:
-            print(str(e))
+        # 在二级索引树插入
+        catalog_num = (len(table)-2) // 4
+        for i in range(0, catalog_num):
+            if i != primary_key and table[(i << 2) + 5] != -1:
+                index_fmt = 'i' + str(table[2 + (i << 2) + TabOff.fmt])
+                value = [value_list[primary_key], value_list[i]]
+                page_no = table[2 + (i << 2) + TabOff.index_page]
+                new_root = self.insert_index(value, page_no, i, index_fmt)
+                if new_root != -1:
+                    self.table_list[table_name][2 + (i << 2) + TabOff.index_page] = new_root
+        return
 
     def select(self, table_name, cond_list):
         """
@@ -306,12 +303,18 @@ class Api(IndexManager):
         for i in range(len(self.addr_list)):
             if self.dirty_list[i] and self.addr_list[i] != -1:
                 self.unload_buffer(i)
+        self.pool.close()
         write_json('buffer', {"file_list": list(self.file_list)})
+        self.file_list.shm.close()
         catalog_info = {}
         catalog_info["catalog_list"] = list(self.catalog_list)
         for table in self.catalog_list:
             if table != -1:
                 catalog_info[table] = list(self.table_list[table])
         write_json('catalog', catalog_info)
+        self.catalog_list.shm.close()
+        self.addr_list.shm.close()
+        self.refer_list.shm.close()
+        self.dirty_list.shm.close()
         print("退出成功.")
         pass

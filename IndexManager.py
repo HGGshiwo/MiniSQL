@@ -38,24 +38,27 @@ class IndexManager(RecordManager):
             self.load_page(page_no)
         addr = self.addr_list.index(page_no)
         is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
-
         # 循环到叶子节点
         while not is_leaf:
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]  # p是记录的指针, addr是页的指针
             last_page = None  # 上一条记录指向的页
             while True:
                 if p == 0:
+                    # 如果不存在比它大的记录，则进入到最后一页
                     page_no = last_page
                     break
                 r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
                 if r[1] > value_list[index]:
                     page_no = last_page
+                    # 如果不存在比它小的记录，则进入这一页
+                    if page_no is None:
+                        page_no = r[0]
                     break
                 pass
                 last_page = r[0]
                 p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
             pass
-            # 如果不存在比它大的记录，则进入到最后一页
+
             if self.addr_list.count(page_no) == 0:
                 self.load_page(page_no)
             addr = self.addr_list.index(page_no)
@@ -184,7 +187,6 @@ class IndexManager(RecordManager):
         while not is_leaf:
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]  # p是记录的指针, addr是页的指针
             last_page = None  # 上一条记录指向的页
-
             while True:
                 if p == 0:
                     # 如果不存在比它大的记录，则进入到最后一页
@@ -193,12 +195,12 @@ class IndexManager(RecordManager):
                 r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
                 if r[1] > value:
                     page_no = last_page
+                    if page_no is None:
+                        page_no = r[0]
                     break
-
                 last_page = r[0]
                 p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
             pass
-
             if self.addr_list.count(page_no) == 0:
                 self.load_page(page_no)
             addr = self.addr_list.index(page_no)
@@ -407,6 +409,8 @@ class IndexManager(RecordManager):
                 r = struct.unpack_from(index_fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
                 if r[1] > index_cond[2]:
                     page_no = last_page
+                    if page_no is None:
+                        page_no = r[0]
                     break
                 last_page = r[0]
                 p = struct.unpack_from("i", self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
