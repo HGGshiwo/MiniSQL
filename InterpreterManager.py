@@ -181,6 +181,7 @@ class InterpreterManager(Cmd, Api):
                         if table[(i << 2) + 5] != -1:
                             raise Exception('I1')
                         index = i
+                        break
                 self.create_index(table_name, index)
                 print('create index finished in '+str(time.time() - t))
             else:
@@ -221,7 +222,7 @@ class InterpreterManager(Cmd, Api):
                         if table[(i << 2) + 5] == -1:
                             raise Exception('I4')
                         index = i
-                        table[(i << 2) + 5] = -1  # create那边没问题吧
+                        break 
                 self.drop_index(table_name, index)
                 print('drop index finished in '+str(time.time() - t))
             else:
@@ -247,6 +248,8 @@ class InterpreterManager(Cmd, Api):
             values = value.split(',')
             # print(values)
             table_name = lists[1]
+            if self.catalog_list.count(table_name) == 0:
+                raise Exception('T2')
             cur_table = self.table_list[table_name]
             len_table = (len(cur_table) - 2) // 4
             if len_table != len(values):
@@ -267,7 +270,7 @@ class InterpreterManager(Cmd, Api):
                     # print('int(fmt)=',int(fmt))
                     if len(item) > int(fmt):
                         # print(item)
-                        raise Exception('too long')
+                        raise Exception('T1')
                 # unique检测，开销预计会很大
                 # if cur_table[(index << 2) + 4]:
                 #     line = ''
@@ -388,50 +391,3 @@ def print_record(data_list):
 # print_record([['a', 'b', 'c'],  [(1, '2eeee', 2), (1, 2, 3)] ])
 pass
 
-
-# def print_record(data_list):
-#     """
-#     友好的输出记录
-#     :param data_list: 第一个是列名，然后是记录
-#     :return:
-#     """
-#     r_len = len(data_list[0])
-#     len_list = [0] * r_len
-#     for r in data_list[1]:
-#         print(r)
-#         for j in range(r_len):
-#             if len('    ' + str(r[j]) + '    ') > len_list[j]:
-#                 len_list[j] = len('    ' + str(r[j]) + '    ')
-
-#     # 画出最上面一条线
-#     print('\n+', end='')
-#     for j in range(r_len):
-#         print('-' * (len_list[j]) + '+', end='')
-
-#     # 画出元素名字
-#     print('\n|', end='')
-#     for j in range(r_len - 1):
-#         print(str(data_list[0][j]).center(len_list[j]) + '|', end='')
-#     print(str(data_list[0][len(data_list) - 1]).center(len_list[r_len - 1]) + '|')
-
-#     # 画出下面一条线
-#     print('+', end='')
-#     for i in range(0, r_len - 1):
-#         print('-' * (len_list[i]) + '+', end='')
-#     print('-' * (len_list[r_len - 1]) + '+')
-
-#     # 画出数据
-#     for i in range(1, len(data_list)):
-#         print('|', end='')
-#         for j in range(r_len - 1):
-#             print(str(data_list[i][j]).center(len_list[j]) + '|', end='')
-#         print(str(data_list[i][len(data_list)-1]).center(len_list[r_len - 1]) + '|')
-
-#     # 画出最下面一条线
-#     print('+', end='')
-#     for j in range(r_len - 1):
-#         print('-' * (len_list[j]) + '+', end='')
-#     print('-' * (len_list[r_len - 1]) + '+')
-
-# # print_record([['a', 'b', 'c'], [1, '2eeee', 2], [1, 2, 2]])
-# pass

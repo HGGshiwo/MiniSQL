@@ -1,0 +1,56 @@
+演示流程
+1.create table
+按如下格式创建表，包含整型、长度为10的字符串、浮点数，其中ID和rank属性是unique的
+create table student (ID int unqiue , rank int unique , name char(20) , score float, primary key(ID) );
+
+2.insert
+插入1000条数据，示例如下：
+insert into test values (410, 0, Tom, 0.9473110135533653)
+
+插入结束后展示文件存储，位置为db_files
+
+3.create index
+在rank属性创建索引
+create index rank on student
+
+4.select
+使用主索引ID、二级索引rank以及非索引属性进行查询，覆盖所有算数比较符，以及无条件情况、多条件情况
+
+select * from student 
+select * from student where rank = 99
+select * from student where rank > 900
+select * from student where rank<=99
+select * from student where rank <> 99
+select * from student where ID = 99
+select * from student where score = 0.6735500386309874
+select * from student where name = Leo
+select * from student where name = Leo and score = 0.6735500386309874
+
+5.drop index
+删除在rank上创建的index
+drop index rank on student
+
+6.delete
+按指定条件删除
+delete from student where rank < 99
+
+删除后再用select进行检验
+select * from student where rank <= 99
+
+全部删除
+delete from student
+
+全部删除后检验
+select * from student
+
+7.drop table 
+
+drop table student
+
+删除后进行检验，兼展示报错功能
+
+select * from student
+
+8.quit
+quit
+推出时会有提示

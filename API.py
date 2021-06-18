@@ -132,31 +132,34 @@ class Api(IndexManager):
         :param value_list:
         :return:
         """
-        if self.catalog_list.count(table_name) == 0:
-            raise Exception('T2')
+        try:
+            if self.catalog_list.count(table_name) == 0:
+                raise Exception('T2')
 
-        table = self.table_list[table_name]
-        primary_key = table[TabOff.primary_key]
+            table = self.table_list[table_name]
+            primary_key = table[TabOff.primary_key]
 
-        # 在主索引树插入
-        page_no = table[2 + (primary_key << 2) + TabOff.index_page]  # 根节点
-        # 索引的解码方式，页号+索引值
-        index_fmt = 'i' + str(table[2 + (primary_key << 2) + TabOff.fmt])
-        new_root = self.insert_index(value_list, page_no, primary_key, index_fmt)
-        if new_root != -1:
-            self.table_list[table_name][2 + (primary_key << 2) + TabOff.index_page] = new_root
+            # 在主索引树插入
+            page_no = table[2 + (primary_key << 2) + TabOff.index_page]  # 根节点
+            # 索引的解码方式，页号+索引值
+            index_fmt = 'i' + str(table[2 + (primary_key << 2) + TabOff.fmt])
+            new_root = self.insert_index(value_list, page_no, primary_key, index_fmt)
+            if new_root != -1:
+                self.table_list[table_name][2 + (primary_key << 2) + TabOff.index_page] = new_root
 
-        # 在二级索引树插入
-        catalog_num = (len(table)-2) // 4
-        for i in range(0, catalog_num):
-            if i != primary_key and table[(i << 2) + 5] != -1:
-                index_fmt = 'i' + str(table[2 + (i << 2) + TabOff.fmt])
-                value = [value_list[primary_key], value_list[i]]
-                page_no = table[2 + (i << 2) + TabOff.index_page]
-                new_root = self.insert_index(value, page_no, i, index_fmt)
-                if new_root != -1:
-                    self.table_list[table_name][2 + (i << 2) + TabOff.index_page] = new_root
-        return
+            # 在二级索引树插入
+            catalog_num = (len(table)-2) // 4
+            for i in range(0, catalog_num):
+                if i != primary_key and table[(i << 2) + 5] != -1:
+                    index_fmt = 'i' + str(table[2 + (i << 2) + TabOff.fmt])
+                    value = [value_list[primary_key], value_list[i]]
+                    page_no = table[2 + (i << 2) + TabOff.index_page]
+                    new_root = self.insert_index(value, page_no, i, index_fmt)
+                    if new_root != -1:
+                        self.table_list[table_name][2 + (i << 2) + TabOff.index_page] = new_root
+            return
+        except Exception as e:
+            print(str(e))
 
     def select(self, table_name, cond_list):
         """
@@ -165,7 +168,7 @@ class Api(IndexManager):
         :param table_name:
         :return:
         """
-        if table_name not in self.table_list.keys():
+        if table_name not in self.catalog_list:
             raise Exception('T2')
         table = self.table_list[table_name]
         primary_key = table[TabOff.primary_key]

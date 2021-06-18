@@ -161,15 +161,20 @@ class RecordManager(CatalogManager):
         fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
         while p != 0:
-            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+            r = list(struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record))
+            for i in range(len(r)):
+                if isinstance(r[i], bytes):
+                    r[i] = str(r[i], encoding='utf8').strip(b'\x00'.decode())  
             match = check_cond(r, cond_list)
             if match:
+                                      
                 res.append(r)
             ahead = go_ahead(r, index_cond)
             if not ahead:
                 break
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
         pass
+
         return res
 
 
