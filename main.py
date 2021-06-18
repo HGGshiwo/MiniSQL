@@ -17,28 +17,30 @@ if __name__ == "__main__":
     # user.print_record
     # user.drop_table('test')
 
-    t = time.time()
-    user.create_table('test', 0, ['index','i',True, -1, 'a','i', True, -1])
-    for i in range(1000):
-        user.insert('test', [i, i])
-    print('insert 1000 tuples in ' + str(time.time()-t))
+    # t = time.time()
+    # user.create_table('test', 0, ['index','i',True, -1, 'a','i', True, -1])
 
-    # user.drop_table('test')
 
-    t = time.time()
-    user.create_index('test', 1)
-    print('create index in ' + str(time.time() - t))
+    # for i in range(100):
+    #     user.insert('test', [i, i])
+    # print('insert 1000 tuples in ' + str(time.time()-t))
 
-    t = time.time()
-    ret = user.select('test', ['a = 245'])
-    print('select finished in '+str(time.time() - t))
-    print(ret)
+    # # user.drop_table('test')
 
-    user.drop_index('test', 1)
-    t = time.time()
-    ret = user.select('test', ['a = 245'])
-    print('select finished in '+str(time.time() - t))
-    print(ret)
+    # t = time.time()
+    # user.create_index('test', 1)
+    # print('create index in ' + str(time.time() - t))
+
+    # t = time.time()
+    # ret = user.select('test', ['a = 24'])
+    # print('select finished in '+str(time.time() - t))
+    # print(ret)
+
+    # user.drop_index('test', 1)
+    # t = time.time()
+    # ret = user.select('test', ['a = 24'])
+    # print('select finished in '+str(time.time() - t))
+    # print(ret)
 
     # user.drop_table('test')
     # pass
