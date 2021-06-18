@@ -184,13 +184,13 @@ def check_cond(r, cond_list):
         if cond[1] == "=":
             if r[cond[0]] != cond[2]:
                 return False
-        elif cond[0] == "<":
+        elif cond[1] == "<":
             if r[cond[0]] >= cond[2]:
                 return False
         elif cond[1] == "<=":
             if r[cond[0]] > cond[2]:
                 return False
-        elif cond[0] == ">":
+        elif cond[1] == ">":
             if r[cond[0]] <= cond[2]:
                 return False
         elif cond[1] == ">=":

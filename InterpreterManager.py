@@ -356,6 +356,3 @@ def print_record(data_list):
     for j in range(r_len - 1):
         print('-' * (len_list[j]) + '+', end='')
     print('-' * (len_list[r_len - 1]) + '+')
-
-print_record([['a', 'b', 'c'], [1, '2eeee', 2], [1, 2, 2]])
-pass

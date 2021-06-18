@@ -416,21 +416,21 @@ class IndexManager(RecordManager):
             addr = self.addr_list.index(page_no)
             is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
 
-            # 如果到了页节点，根据操作符判断是否到下一个页
-            while page_no != -1:
-                if self.addr_list.count(page_no) == 0:
-                    self.load_page(page_no)
-                addr = self.addr_list.index(page_no)
-                page_res = self.select_record(addr, cond_list, index_cond)
-                res.extend(page_res)
-                if index_cond[1] == "=":
-                    break
-                elif index_cond[1] == ">" or index_cond[1] == ">=":
-                    page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)
-                elif index_cond[1] == "<" or index_cond[1] == "<=":
-                    page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.previous_page)
-                else:
-                    raise Exception('E1')
+        # 如果到了叶节点，根据操作符判断是否到下一个页
+        while page_no != -1:
+            if self.addr_list.count(page_no) == 0:
+                self.load_page(page_no)
+            addr = self.addr_list.index(page_no)
+            page_res = self.select_record(addr, cond_list, index_cond)
+            res.extend(page_res)
+            if index_cond[1] == "=":
+                break
+            elif index_cond[1] == ">" or index_cond[1] == ">=":
+                page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
+            elif index_cond[1] == "<" or index_cond[1] == "<=":
+                page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.previous_page)[0]
+            else:
+                raise Exception('E1')
         pass
         return res
 
