@@ -151,7 +151,7 @@ class Api(IndexManager):
         for i in range(0, catalog_num):
             if i != primary_key and table[(i << 2) + 5] != -1:
                 index_fmt = 'i' + str(table[2 + (i << 2) + TabOff.fmt])
-                value = [value_list[primary_key], value_list[i]]
+                value = [value_list[i], value_list[primary_key]]
                 page_no = table[2 + (i << 2) + TabOff.index_page]
                 new_root = self.insert_index(value, page_no, i, index_fmt)
                 if new_root != -1:

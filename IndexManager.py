@@ -493,7 +493,7 @@ class IndexManager(RecordManager):
         """
         page_no = self.new_root(True, fmt)
         for value in value_list:
-            new_page = self.insert_index(value, page_no, 1, index_fmt)
+            new_page = self.insert_index(value, page_no, 0, index_fmt)
             if new_page != -1:
                 page_no = new_page
         return page_no

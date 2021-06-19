@@ -167,7 +167,6 @@ class RecordManager(CatalogManager):
                     r[i] = str(r[i], encoding='utf8').strip(b'\x00'.decode())  
             match = check_cond(r, cond_list)
             if match:
-                                      
                 res.append(r)
             ahead = go_ahead(r, index_cond)
             if not ahead:
