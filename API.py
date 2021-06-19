@@ -185,8 +185,7 @@ class Api(IndexManager):
             # 将value转为数字
             if value.isdigit():
                 value = eval(value)
-            else:
-                value = value.encode()
+
             cond_list[i] = [column, op, value]
 
             index_page = table.index(column_name) + 3
