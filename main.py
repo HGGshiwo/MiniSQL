@@ -19,20 +19,21 @@ if __name__ == "__main__":
 
     user.create_table(
         'test', 0, ['index', 'i', True, -1, 'sec', 'i', True, -1, 'name', '20s', False, -1, 'f', 'f', False, -1,])
+
     for i in range(1000):
         name = random.choice(name_list)
         f = random.random()
         value_list = [index[i], sec_index[i], name, f]
         print(value_list)
         user.insert('test', value_list)
-        # for j in range(5):
-        #     if user.addr_list.count(j) != 0:
-        #         addr = user.addr_list.index(j)
-        #         user.print_header(addr)
-        #         user.print_record(addr)
+    user.create_index('test', 1)
     ret = user.select('test', ['index=99'])
     print(ret)
-    user.create_index('test', 1)
-    ret = user.select('test', ['sec = 99'])
+    user.drop_index('test', 1)
+    user.delete('test', ['sec < 99'])
+    ret = user.select('test', ['sec <= 99'])
+    print(ret)
+    user.delete('test', [])
+    ret = user.select('test', [])
     print(ret)
     pass

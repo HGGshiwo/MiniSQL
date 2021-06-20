@@ -207,8 +207,8 @@ class IndexManager(RecordManager):
             is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
         pass
 
-        leaf_header = -1
-        index_page = -1
+        leaf_header = None
+        index_page = None
 
         fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
@@ -229,18 +229,22 @@ class IndexManager(RecordManager):
             parent = struct.unpack_from(index_fmt, self.pool.buf, (cur_addr << 12) + Off.parent)[0]
             is_leaf = struct.unpack_from('?', self.pool.buf, (cur_addr << 12) + Off.is_leaf)[0]
 
-            # 检查该页是否需要被删除，删除的条件是：根节点且只有一个孩子, 且不是叶子
-            if parent == -1 and not is_leaf:
-                valid_num, invalid_num = self.count_valid(cur_addr)
-                if valid_num == 1:
-                    p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
-                    index_page = struct.unpack_from(index_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)[0]
-                    if self.addr_list.count(index_page) == 0:
-                        self.load_page(index_page)
-                    index_page_addr = self.addr_list.index(index_page)
-                    self.delete_buffer(cur_addr)
-                    # 让孩子变为根节点
-                    struct.pack_into('i', self.pool.buf, (index_page_addr << 12) + Off.parent, -1)
+            # 非根节点，只有一个孩子, 不是叶子，删除
+            valid_num, invalid_num = self.count_valid(cur_addr)
+            if parent == -1 and not is_leaf and valid_num == 1:
+                p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
+                index_page = struct.unpack_from(index_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)[0]
+                if self.addr_list.count(index_page) == 0:
+                    self.load_page(index_page)
+                index_page_addr = self.addr_list.index(index_page)
+                self.delete_buffer(cur_addr)
+                # 让孩子变为根节点
+                struct.pack_into('i', self.pool.buf, (index_page_addr << 12) + Off.parent, -1)
+                break
+
+            # 叶子且有效记录为空，说明表被删完了
+            if is_leaf and valid_num == 0:
+                leaf_header = -1
                 break
 
             # 检查是否合并或者转移, 非叶只要是2个以上都是合法的

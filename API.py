@@ -116,12 +116,9 @@ class Api(IndexManager):
                     page_no = self.table_list[table_name][2 + (i >> 2) + TabOff.index_page]  # 根节点会随时改
                     index_fmt = 'i' + str(table[2 + (i >> 2) + TabOff.fmt])
                     leaf_header, index_page = self.delete_index(page_no, i, index_fmt, delete_record[i])
-                    # root_addr = self.addr_list.index(page_no)
-                    # self.print_header(root_addr)
-                    # self.print_record(root_addr)
-                    if leaf_header != -1:
+                    if leaf_header is not None:
                         self.table_list[table_name][TabOff.leaf_header] = leaf_header
-                    if index_page != -1:
+                    if index_page is not None:
                         self.table_list[table_name][(i << 2) + 5] = index_page
         return
 
