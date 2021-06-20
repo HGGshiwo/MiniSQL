@@ -205,7 +205,7 @@ class BufferManager(object):
         """
         addr = self.addr_list.index(page_no)
         self.file_list[page_no] = -1
-        self.unload_buffer(addr)
+        self.addr_list[addr] = -1
 
     def unload_buffer(self, addr):
         """
