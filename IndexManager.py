@@ -4,8 +4,8 @@ from RecordManager import RecordManager, RecOff
 
 
 class IndexManager(RecordManager):
-    def __init__(self):
-        RecordManager.__init__(self)
+    def __init__(self, lock_list=None):
+        RecordManager.__init__(self, lock_list)
 
     def new_root(self, is_leaf, fmt):
         """
@@ -34,9 +34,7 @@ class IndexManager(RecordManager):
         :param index: 当前的索引是第几个
         :return: 新的根，如果被修改的话，否则是-1
         """
-        if self.addr_list.count(page_no) == 0:
-            self.load_page(page_no)
-        addr = self.addr_list.index(page_no)
+        addr = self.get_addr(page_no)
         is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
         # 循环到叶子节点
         while not is_leaf:
@@ -59,9 +57,7 @@ class IndexManager(RecordManager):
                 p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
             pass
 
-            if self.addr_list.count(page_no) == 0:
-                self.load_page(page_no)
-            addr = self.addr_list.index(page_no)
+            addr = self.get_addr(page_no)
             is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
         pass
 
@@ -95,9 +91,7 @@ class IndexManager(RecordManager):
             struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.next_page, next_page)
             struct.pack_into('i', self.pool.buf, (cur_addr << 12) + Off.next_page, right_page)
             if next_page != -1:
-                if self.addr_list.count(next_page) == 0:
-                    self.load_page(next_page)
-                next_addr = self.addr_list.index(next_page)
+                next_addr = self.get_addr(next_page)
                 struct.pack_into('i', self.pool.buf, (next_addr << 12) + Off.previous_page, right_page)
 
             valid_num, invalid_num = self.count_valid(right_addr)  # 记录的数目
@@ -129,9 +123,7 @@ class IndexManager(RecordManager):
                 p = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + Off.header)[0]
                 while p != 0:
                     child_page = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + p + RecOff.record)[0]
-                    if self.addr_list.count(child_page) == 0:
-                        self.load_page(child_page)
-                    child_addr = self.addr_list.index(child_page)
+                    child_addr = self.get_addr(child_page)
                     struct.pack_into('i', self.pool.buf, (child_addr << 12) + Off.parent, right_addr)
                     p = struct.unpack_from('i', self.pool.buf, (child_addr << 12) + p + RecOff.next_addr)[0]
 
@@ -159,9 +151,7 @@ class IndexManager(RecordManager):
             p = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + Off.header)[0]
             r = struct.unpack_from(cur_fmt, self.pool.buf, (right_addr << 12) + p + RecOff.record)
             cur_value_list = [right_addr, r[cur_index]]  # 想要插入到父页的数据
-            if self.addr_list.count(parent) == 0:
-                self.load_page(parent)
-            cur_addr = self.addr_list.index(parent)
+            cur_addr = self.get_addr(parent)
             cur_fmt_size = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.fmt_size)[0]
             cur_fmt = struct.unpack_from(str(cur_fmt_size) + 's', self.pool.buf, (cur_addr << 12) + Off.fmt)
             cur_index = 1
@@ -178,10 +168,7 @@ class IndexManager(RecordManager):
         :param value:
         :return: leaf header, index page
         """
-        if self.addr_list.count(page_no) == 0:
-            self.load_page(page_no)
-        addr = self.addr_list.index(page_no)
-
+        addr = self.get_addr(page_no)
         is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
         # 循环到叶子节点
         while not is_leaf:
@@ -201,9 +188,7 @@ class IndexManager(RecordManager):
                 last_page = r[0]
                 p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
             pass
-            if self.addr_list.count(page_no) == 0:
-                self.load_page(page_no)
-            addr = self.addr_list.index(page_no)
+            addr = self.get_addr(page_no)
             is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
         pass
 
@@ -234,9 +219,7 @@ class IndexManager(RecordManager):
             if parent == -1 and not is_leaf and valid_num == 1:
                 p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
                 index_page = struct.unpack_from(index_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)[0]
-                if self.addr_list.count(index_page) == 0:
-                    self.load_page(index_page)
-                index_page_addr = self.addr_list.index(index_page)
+                index_page_addr = self.get_addr(index_page)
                 self.delete_buffer(cur_addr)
                 # 让孩子变为根节点
                 struct.pack_into('i', self.pool.buf, (index_page_addr << 12) + Off.parent, -1)
@@ -251,9 +234,7 @@ class IndexManager(RecordManager):
             if not half_empty or parent == -1:
                 break
 
-            if self.addr_list.count(parent) == 0:
-                self.load_page(parent)
-            parent_addr = self.addr_list.index(parent)
+            parent_addr = self.get_addr(parent)
 
             # 找到该条记录的旁边一条记录
             merge_left = None
@@ -277,9 +258,7 @@ class IndexManager(RecordManager):
 
             # 计算帮助其合并的页的页号
             merge_page = record[0]
-            if self.addr_list.count(merge_page) == 0:
-                self.load_page(merge_page)
-            merge_addr = self.addr_list.index(merge_page)
+            merge_addr = self.get_addr(merge_page)
             valid_num, invalid_num = self.count_valid(merge_addr)
 
             # 如果大于一半，转移一条记录
@@ -330,14 +309,10 @@ class IndexManager(RecordManager):
                 if pre_page == -1:
                     leaf_header = next_page
                 else:
-                    if self.addr_list.count(pre_page) == 0:
-                        self.load_page(pre_page)
-                    pre_addr = self.addr_list.index(pre_page)
+                    pre_addr = self.get_addr(pre_page)
                     struct.pack_into('i', self.pool.buf, (pre_addr << 12) + Off.next_page, next_page)
                 if next_page != -1:
-                    if self.addr_list.count(next_page) == 0:
-                        self.load_page(next_page)
-                    next_addr = self.addr_list.index(next_page)
+                    next_addr = self.get_addr(next_page)
                     struct.pack_into('i', self.pool.buf, (next_addr << 12) + Off.previous_page, pre_page)
 
                 # 在缓存和文件物理列表中删除这个文件
@@ -361,16 +336,11 @@ class IndexManager(RecordManager):
         :return:
         """
         is_delete = True
-        if self.addr_list.count(page_no) == 0:
-            self.load_page(page_no)
-        addr = self.addr_list.index(page_no)
+        addr = self.get_addr(page_no)
         parent = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.parent)[0]
 
         while is_delete and parent != -1:
-            if self.addr_list.count(parent) == 0:
-                self.load_page(parent)
-            parent_addr = self.addr_list.index(parent)
-
+            parent_addr = self.get_addr(parent)
             p = struct.unpack_from('i', self.pool.buf, (parent_addr << 12) + Off.header)[0]
             # 找到这条记录，修改它
             while True:
@@ -399,9 +369,7 @@ class IndexManager(RecordManager):
         :return:
         """
         res = []
-        if self.addr_list.count(page_no) == 0:
-            self.load_page(page_no)
-        addr = self.addr_list.index(page_no)
+        addr = self.get_addr(page_no)
         is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
         while not is_leaf:
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
@@ -419,16 +387,12 @@ class IndexManager(RecordManager):
                 last_page = r[0]
                 p = struct.unpack_from("i", self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
             pass
-            if self.addr_list.count(page_no) == 0:
-                self.load_page(page_no)
-            addr = self.addr_list.index(page_no)
+            addr = self.get_addr(page_no)
             is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
 
         # 如果到了叶节点，根据操作符判断是否到下一个页
         while page_no != -1:
-            if self.addr_list.count(page_no) == 0:
-                self.load_page(page_no)
-            addr = self.addr_list.index(page_no)
+            addr = self.get_addr(page_no)
             page_res = self.select_record(addr, cond_list, index_cond)
             res.extend(page_res)
             if index_cond[1] == "=":
@@ -452,9 +416,7 @@ class IndexManager(RecordManager):
         res = []
         page = leaf_header
         while page != -1:
-            if self.addr_list.count(page) == 0:
-                self.load_page(page)
-            addr = self.addr_list.index(page)
+            addr = self.get_addr(page)
             page_res = self.select_record(addr, cond_list)
             res.extend(page_res)
             page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
@@ -472,9 +434,7 @@ class IndexManager(RecordManager):
         stack.append(page_no)
         while len(stack) != 0:
             page_no = stack.pop()
-            if self.addr_list.count(page_no) == 0:
-                self.load_page(page_no)
-            addr = self.addr_list.index(page_no)
+            addr = self.get_addr(page_no)
             is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
 
             if not is_leaf:

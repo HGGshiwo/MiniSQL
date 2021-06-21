@@ -1,6 +1,5 @@
 import struct
-from CatalogManager import CatalogManager
-from BufferManager import Off
+from BufferManager import Off, BufferManager
 from enum import IntEnum
 
 
@@ -12,9 +11,9 @@ class RecOff(IntEnum):
     record = 13
 
 
-class RecordManager(CatalogManager):
-    def __init__(self):
-        CatalogManager.__init__(self)
+class RecordManager(BufferManager):
+    def __init__(self, lock_list):
+        BufferManager.__init__(self, lock_list)
 
     def insert_record(self, addr, record, index):
         """

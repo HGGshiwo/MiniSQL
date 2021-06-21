@@ -1,6 +1,6 @@
 from enum import IntEnum
-from BufferManager import BufferManager
-import os
+from multiprocessing import shared_memory
+import json
 
 
 class Table(IntEnum):
@@ -13,6 +13,84 @@ class Table(IntEnum):
     table_name = 6
 
 
-class CatalogManager(BufferManager):
-    def __init__(self):
-        BufferManager.__init__(self)
+class CatalogManager(object):
+    """
+    表管理类
+    """
+    def __init__(self, table_lock = None):
+        try:
+            self.table_lock = table_lock
+            self.catalog_list = shared_memory.ShareableList(sequence=None, name='catalog_list')
+            self.table_list = {}
+            for table in self.catalog_list:
+                if table == -1:
+                    continue
+                self.table_list[table] = shared_memory.ShareableList(sequence=None, name=table)
+        except FileNotFoundError:
+            address = 'db_files/catalog.json'
+            with open(address, 'r') as file:
+                catalog_info = json.load(file)
+            self.catalog_list = shared_memory.ShareableList(sequence=catalog_info['catalog_list'], name='catalog_list')
+            self.table_list = {}
+            for table in self.catalog_list:
+                if table == -1:
+                    continue
+                self.table_list[table] = shared_memory.ShareableList(sequence=catalog_info[table], name=table)
+
+    def new_table(self, table_name, primary_key, table_info, page_no):
+        """
+        新建一个表的信息
+        :param table_name:
+        :param primary_key:
+        :param table_info:
+        :param page_no:
+        :return:
+        """
+        if self.catalog_list.count(-1) == 0:
+            raise Exception('B1')
+
+        if self.catalog_list.count(table_name) == 1:
+            raise Exception('T1')
+
+        # 在catalog_list中注册该表
+        index = self.catalog_list.index(-1)
+        self.catalog_list[index] = table_name
+
+        # 将该表的信息写入内存
+        table = [primary_key, page_no]
+        table = table + table_info
+        table[(primary_key << 2) + 5] = page_no  # 为primary key的属性index_page赋值
+        self.table_list[table_name] = shared_memory.ShareableList(sequence=table, name=table_name)
+
+    def get_table(self, table_name):
+        if table_name not in self.table_list.keys():
+            raise Exception('T2')
+        return self.table_list[table_name]
+
+    def delete_table(self, table_name):
+        """
+        删除表信息
+        :param table_name:
+        :return:
+        """
+        table_index = self.catalog_list.index(table_name)
+        self.catalog_list[table_index] = -1
+        self.table_list[table_name].shm.unlink()
+        return
+
+    def quit_catalog(self):
+        """
+        退出表管理
+        :return:
+        """
+        catalog_info = {}
+        catalog_info["catalog_list"] = list(self.catalog_list)
+        for table in self.catalog_list:
+            if table != -1:
+                catalog_info[table] = list(self.table_list[table])
+        buffer = json.dumps(catalog_info, ensure_ascii=False)
+        address = 'db_files/catalog.json'
+        with open(address, 'w') as file:
+            file.write(buffer)
+        self.catalog_list.shm.close()
+

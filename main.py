@@ -30,6 +30,8 @@ if __name__ == "__main__":
     ret = user.select('test', ['index=99'])
     print(ret)
     user.drop_index('test', 1)
+    ret = user.select('test', ['sec < 99'])
+    print(ret)
     user.delete('test', ['sec < 99'])
     ret = user.select('test', ['sec <= 99'])
     print(ret)

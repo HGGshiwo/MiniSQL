@@ -1,9 +1,9 @@
 import struct
 from enum import IntEnum
 from IndexManager import IndexManager
-from BufferManager import Off, write_json
+from BufferManager import Off
+from CatalogManager import CatalogManager
 from RecordManager import RecOff
-from multiprocessing import shared_memory
 import re
 
 
@@ -16,10 +16,16 @@ class TabOff(IntEnum):
     index_page = 3
 
 
-class Api(IndexManager):
+class Api(IndexManager, CatalogManager):
     def __init__(self, lock_list=None):
-        IndexManager.__init__(self)
-        self.lock_list = lock_list
+        self.grant_list = []
+
+        if lock_list is not None:
+            IndexManager.__init__(self, lock_list[256:])
+            CatalogManager.__init__(self, lock_list[0:256])
+        else:
+            IndexManager.__init__(self)
+            CatalogManager.__init__(self)
 
     def print_info(self):
         print("pool", end='\t\t')
@@ -72,28 +78,13 @@ class Api(IndexManager):
         :param table_info: 顺序是name, fmt, unique, index_page全部是-1
         :return:
         """
-        if self.catalog_list.count(-1) == 0:
-            raise Exception('B1')
-
-        if self.catalog_list.count(table_name) == 1:
-            raise Exception('T1')
-
-        # 在catalog_list中注册该表
-        index = self.catalog_list.index(-1)
-        self.catalog_list[index] = table_name
-
         # 为该表开辟文件空间存储
         fmt = ''
         for i in range(len(table_info)):
             if i % 4 == 1:
                 fmt = fmt + table_info[i]
         page_no = self.new_root(True, fmt)
-
-        # 将该表的信息写入内存
-        table = [primary_key, page_no]
-        table = table + table_info
-        table[(primary_key << 2) + 5] = page_no  # 为primary key的属性index_page赋值
-        self.table_list[table_name] = shared_memory.ShareableList(sequence=table, name=table_name)
+        self.new_table(table_name, primary_key, table_info, page_no)
         pass
 
     def delete(self, table_name, condition):
@@ -103,10 +94,7 @@ class Api(IndexManager):
         :param condition:
         :return:
         """
-        if table_name not in self.table_list.keys():
-            raise Exception('T2')
-
-        table = self.table_list[table_name]
+        table = self.get_table(table_name)
         delete_list = self.select(table_name, condition)  # 返回对应的记录
 
         for delete_record in delete_list:
@@ -129,10 +117,7 @@ class Api(IndexManager):
         :param value_list:
         :return:
         """
-        if self.catalog_list.count(table_name) == 0:
-            raise Exception('T2')
-
-        table = self.table_list[table_name]
+        table = self.get_table(table_name)
         primary_key = table[TabOff.primary_key]
 
         # 在主索引树插入
@@ -162,9 +147,7 @@ class Api(IndexManager):
         :param table_name:
         :return:
         """
-        if table_name not in self.catalog_list:
-            raise Exception('T2')
-        table = self.table_list[table_name]
+        table = self.get_table(table_name)
         primary_key = table[TabOff.primary_key]
         primary_page = table[(primary_key << 2) + 5]  # 主索引所在根
         primary_index_fmt = 'i' + table[(primary_key << 2) + 3]
@@ -220,10 +203,7 @@ class Api(IndexManager):
         :param index:
         :return:
         """
-        if self.catalog_list.count(table_name) == 0:
-            raise Exception('T2')  # 表不存在
-        table = self.table_list[table_name]
-
+        table = self.get_table(table_name)
         res = []
         # res[]会按照[INDEX_VALUE,PRIMARY_KEY_VALUE]存储数据，调用函数排序，NEW_ROOT,不断调用插入，返回root
         leaf_header = table[TabOff.leaf_header]  # leaf_header是第一个叶子节点所在的页号
@@ -245,9 +225,7 @@ class Api(IndexManager):
         sec_index_fmt = 'i' + table[(index << 2) + 3]
 
         while page_no != -1:
-            if self.addr_list.count(page_no) == 0:
-                self.load_page(page_no)
-            addr = self.addr_list.index(page_no)
+            addr = self.get_addr(page_no)
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
             while p != 0:
                 r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
@@ -265,9 +243,7 @@ class Api(IndexManager):
         :param index:
         :return:
         """
-        if self.catalog_list.count(table_name) == 0:
-            raise Exception('T2')
-        table = self.table_list[table_name]
+        table = self.get_table(table_name)
         page_no = table[(index << 2) + 5]
         fmt = table[(index << 2) + 3]
         index_fmt = 'i' + fmt
@@ -280,9 +256,7 @@ class Api(IndexManager):
         :param table_name:
         :return:
         """
-        if self.catalog_list.count(table_name) == 0:
-            raise Exception('T2')
-        table = self.table_list[table_name]
+        table = self.get_table(table_name)
         col_num = (len(table) - 1)//4
         for i in range(col_num):
             page_no = table[(i << 2) + 5]
@@ -290,27 +264,11 @@ class Api(IndexManager):
             index_fmt = 'i' + fmt
             if page_no != -1:
                 self.drop_tree(page_no, index_fmt)
-        table_index = self.catalog_list.index(table_name)
-        self.catalog_list[table_index] = -1
-        self.table_list[table_name].shm.unlink()
+        self.delete_table(table_name)
         return
 
     def quit(self):
-        for i in range(len(self.addr_list)):
-            if self.dirty_list[i] and self.addr_list[i] != -1:
-                self.unload_buffer(i)
-        self.pool.close()
-        write_json('buffer', {"file_list": list(self.file_list)})
-        self.file_list.shm.close()
-        catalog_info = {}
-        catalog_info["catalog_list"] = list(self.catalog_list)
-        for table in self.catalog_list:
-            if table != -1:
-                catalog_info[table] = list(self.table_list[table])
-        write_json('catalog', catalog_info)
-        self.catalog_list.shm.close()
-        self.addr_list.shm.close()
-        self.refer_list.shm.close()
-        self.dirty_list.shm.close()
+        self.quit_catalog()
+        self.quit_buffer()
         print("退出成功.")
         pass
