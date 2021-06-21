@@ -9,6 +9,7 @@ insert into test values (410, 0, Tom, 0.9473110135533653)
 
 插入结束后展示文件存储，位置为db_files
 
+
 3.create index
 在rank属性创建索引
 create index rank on student
@@ -22,9 +23,8 @@ select * from student where rank > 900
 select * from student where rank<=99
 select * from student where rank <> 99
 select * from student where ID = 99
-select * from student where score = 0.6735500386309874
 select * from student where name = Leo
-select * from student where name = Leo and score = 0.6735500386309874
+select * from student where name = Leo and ID = 505
 
 5.drop index
 删除在rank上创建的index
