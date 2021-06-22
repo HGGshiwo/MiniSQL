@@ -1,4 +1,5 @@
 import struct
+import math
 from BufferManager import Off, BufferManager
 from enum import IntEnum
 
@@ -185,7 +186,10 @@ def check_cond(r, cond_list):
     """
     for cond in cond_list:
         if cond[1] == "=":
-            if r[cond[0]] != cond[2]:
+            if isinstance(cond[0], float):
+                if not math.isclose(r[cond[0]], cond[2]):
+                    return False
+            elif r[cond[0]] != cond[2]:
                 return False
         elif cond[1] == "<":
             if r[cond[0]] >= cond[2]:

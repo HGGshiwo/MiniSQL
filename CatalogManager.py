@@ -63,7 +63,7 @@ class CatalogManager(object):
         self.table_list[table_name] = shared_memory.ShareableList(sequence=table, name=table_name)
 
     def get_table(self, table_name):
-        if table_name not in self.table_list.keys():
+        if self.catalog_list.count(table_name) == 0:
             raise Exception('T2')
         return self.table_list[table_name]
 
