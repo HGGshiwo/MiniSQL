@@ -7,6 +7,42 @@ class IndexManager(RecordManager):
     def __init__(self, lock_list=None):
         RecordManager.__init__(self, lock_list)
 
+    def print_page(self, page_no):
+        addr = self.get_addr(page_no)
+        print('------------------page ' + str(page_no) + ' info------------------')
+        current_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.current_page)[0]
+        print("current_page\t" + str(current_page))
+        next_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
+        print("next_page\t\t" + str(next_page))
+        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+        print("header\t\t\t" + str(header))
+        is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
+        print("is_leaf\t\t\t" + str(is_leaf))
+        parent = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.parent)[0]
+        print("parent\t\t\t" + str(parent))
+        previous_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.previous_page)[0]
+        print("previous_page\t" + str(previous_page))
+        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
+        print("fmt_size\t\t" + str(fmt_size))
+        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
+        print('fmt\t\t\t\t' + str(fmt, encoding='utf8'))
+
+        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
+        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
+        p = header
+        while p != 0:
+            pre = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.pre_addr)[0]
+            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+            cur = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.curr_addr)[0]
+            next_addr = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
+            valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
+            print("valid:" + str(valid) + "\tcur:" + str(cur)
+                  + "\tpre:" + str(pre) + '\tnext:' + str(next_addr) + '\tr:', end='')
+            print(r)
+            p = next_addr
+        print('')
+
     def new_root(self, is_leaf, fmt):
         """
          创建新的根节点，不会在catalog中修改，因此需要外部修改catalog
@@ -138,19 +174,19 @@ class IndexManager(RecordManager):
                 parent_addr = self.addr_list.index(parent)
                 p = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.header)[0]
                 r = struct.unpack_from(cur_fmt, self.pool.buf, (cur_addr << 12) + p + RecOff.record)
-                value_list = [cur_addr, r[cur_index]]
+                value_list = [cur_page, r[cur_index]]
                 self.insert_record(parent_addr, value_list, 1)
 
                 p = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + Off.header)[0]
                 r = struct.unpack_from(cur_fmt, self.pool.buf, (right_addr << 12) + p + RecOff.record)
-                value_list = [right_addr, r[cur_index]]
+                value_list = [right_page, r[cur_index]]
                 self.insert_record(parent_addr, value_list, 1)
                 return parent
 
             # 如果父节点存在，则把新页需要插入的传递到下一个循环
             p = struct.unpack_from('i', self.pool.buf, (right_addr << 12) + Off.header)[0]
             r = struct.unpack_from(cur_fmt, self.pool.buf, (right_addr << 12) + p + RecOff.record)
-            cur_value_list = [right_addr, r[cur_index]]  # 想要插入到父页的数据
+            cur_value_list = [right_page, r[cur_index]]  # 想要插入到父页的数据
             cur_addr = self.get_addr(parent)
             cur_fmt_size = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.fmt_size)[0]
             cur_fmt = struct.unpack_from(str(cur_fmt_size) + 's', self.pool.buf, (cur_addr << 12) + Off.fmt)

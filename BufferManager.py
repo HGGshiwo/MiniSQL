@@ -112,7 +112,7 @@ class BufferManager(object):
         :param page_no:
         :return:
         """
-        addr = self.addr_list.index(page_no)
+        addr = self.get_addr(page_no)
         self.file_list[page_no] = -1
         self.addr_list[addr] = -1
 

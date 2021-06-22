@@ -88,6 +88,7 @@ class CatalogManager(object):
         for table in self.catalog_list:
             if table != -1:
                 catalog_info[table] = list(self.table_list[table])
+                self.table_list[table].shm.close()
         buffer = json.dumps(catalog_info, ensure_ascii=False)
         address = 'db_files/catalog.json'
         with open(address, 'w') as file:

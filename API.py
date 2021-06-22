@@ -35,41 +35,6 @@ class Api(IndexManager, CatalogManager):
         print('file_list', end='\t\t')
         print(self.file_list)
 
-    def print_header(self, addr):
-        print('------------------addr ' + str(addr) + ' info------------------')
-        current_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.current_page)[0]
-        print("current_page\t" + str(current_page))
-        next_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
-        print("next_page\t\t" + str(next_page))
-        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
-        print("header\t\t\t" + str(header))
-        is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
-        print("is_leaf\t\t\t" + str(is_leaf))
-        parent = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.parent)[0]
-        print("parent\t\t\t" + str(parent))
-        previous_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.previous_page)[0]
-        print("previous_page\t" + str(previous_page))
-        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
-        print("fmt_size\t\t" + str(fmt_size))
-        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
-        print('fmt\t\t\t\t' + str(fmt, encoding='utf8'))
-
-    def print_record(self, addr):
-        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
-        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
-        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
-        p = header
-        while p != 0:
-            pre = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.pre_addr)[0]
-            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
-            cur = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.curr_addr)[0]
-            next_addr = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
-            valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
-            print("valid:" + str(valid) + "\tcur:" + str(cur)
-                  + "\tpre:" + str(pre) + '\tnext:' + str(next_addr) + '\tr:', end='')
-            print(r)
-            p = next_addr
-
     def create_table(self, table_name, primary_key, table_info):
         """
         为新表格在catalog中注册
