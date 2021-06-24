@@ -1,36 +1,31 @@
 import struct
-import time
 from enum import IntEnum
-from IndexManager import IndexManager, TabOff
-from BufferManager import Off, write_json
+from IndexManager import IndexManager
+from BufferManager import Off
+from CatalogManager import CatalogManager
 from RecordManager import RecOff
-from InterpreterManager import InterpreterManager
+import re
 
 
-
-class Error(IntEnum):
-    no_error = 0
-    table_name_duplicate = 1
-    table_name_not_exists = 2
-    column_name_duplicate = 3
-    column_name_not_exists = 4
-    type_not_support = 5
-    user_not_exist = 6
-    password_not_correct = 7
+class TabOff(IntEnum):
+    primary_key = 0
+    leaf_header = 1
+    name = 0
+    fmt = 1
+    unique = 2
+    index_page = 3
 
 
-
-class Api(IndexManager, InterpreterManager):
+class Api(IndexManager, CatalogManager):
     def __init__(self, lock_list=None):
-        IndexManager.__init__(self)
-        self.lock_list = lock_list
+        self.grant_list = []
 
-class Operate(IntEnum):
-    create_table = 0
-    insert = 1
-    select=2
-    delete=3
-
+        if lock_list is not None:
+            IndexManager.__init__(self, lock_list[256:])
+            CatalogManager.__init__(self, lock_list[0:256])
+        else:
+            IndexManager.__init__(self)
+            CatalogManager.__init__(self)
 
     def print_info(self):
         print("pool", end='\t\t')
@@ -39,63 +34,23 @@ class Operate(IntEnum):
         print(self.addr_list)
         print('file_list', end='\t\t')
         print(self.file_list)
-        print('occupy_list', end='\t\t')
-        print(self.occupy_list)
-        print('buffer_info', end='\t\t')
-        print(self.buffer_info)
-
-
-    def print_header(self, addr):
-        print('------------------addr ' + str(addr) + ' info------------------')
-        current_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.current_page)[0]
-        print("current_page\t" + str(current_page))
-        next_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
-        print("next_page\t\t" + str(next_page))
-        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
-        print("header\t\t\t" + str(header))
-        is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
-        print("is_leaf\t\t\t" + str(is_leaf))
-        previous_page = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.previous_page)[0]
-        print("previous_page\t" + str(previous_page))
-        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
-        print("fmt_size\t\t" + str(fmt_size))
-        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
-        print('fmt\t\t\t\t' + str(fmt, encoding='utf8'))
-
-    def print_record(self, addr):
-        header = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
-        fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
-        fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
-        p = header
-        while p != 0:
-            pre = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.pre_addr)[0]
-            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
-            cur = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.curr_addr)[0]
-            next_addr = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
-            valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
-            print("valid:" + str(valid) + "\tcur:" + str(cur)
-                  + "\tpre:" + str(pre) + '\tnext:' + str(next_addr) + '\tr:', end='')
-            print(r)
-            p = next_addr
-
-    def exe_cmd(self):
-        """
-        执行命令
-        :return:
-        """
-        args = self.get_cmd()
-        self.create_table(*args)
-        pass
 
     def create_table(self, table_name, primary_key, table_info):
         """
-        创建一个表
-        :param table_name: 表名
-        :param primary_key: 主键位于第几个元素
-        :param table_info: (name, fmt, unique, index_page)，其中index_page全部是-1
+        为新表格在catalog中注册
+        :param table_name:
+        :param primary_key:
+        :param table_info: 顺序是name, fmt, unique, index_page全部是-1
         :return:
         """
-        self.new_table(table_name, primary_key, table_info)
+        # 为该表开辟文件空间存储
+        fmt = ''
+        for i in range(len(table_info)):
+            if i % 4 == 1:
+                fmt = fmt + table_info[i]
+        page_no = self.new_root(True, fmt)
+        self.new_table(table_name, primary_key, table_info, page_no)
+        pass
 
     def delete(self, table_name, condition):
         """
@@ -104,16 +59,21 @@ class Operate(IntEnum):
         :param condition:
         :return:
         """
-        if self.catalog_list.count(table_name) != 0:
-            delete_list = self.select_page(table_name, condition)  # 返回对应的记录
-            table = self.table_list[table_name]
-            for delete_record in delete_list:
-                catalog_num = (len(table) - 2) // 4
-                for i in range(0, catalog_num):
-                    if table[(i << 2) + 5] != -1:
-                        self.delete_index(table_name, i, delete_record[i])
-            return
-        print('表名为 ' + table_name + ' 的表不存在.')
+        table = self.get_table(table_name)
+        delete_list = self.select(table_name, condition)  # 返回对应的记录
+
+        for delete_record in delete_list:
+            catalog_num = (len(table) - 2) // 4
+            for i in range(0, catalog_num):
+                if table[(i << 2) + 5] != -1:
+                    page_no = self.table_list[table_name][2 + (i >> 2) + TabOff.index_page]  # 根节点会随时改
+                    index_fmt = 'i' + str(table[2 + (i >> 2) + TabOff.fmt])
+                    leaf_header, index_page = self.delete_index(page_no, i, index_fmt, delete_record[i])
+                    if leaf_header is not None:
+                        self.table_list[table_name][TabOff.leaf_header] = leaf_header
+                    if index_page is not None:
+                        self.table_list[table_name][(i << 2) + 5] = index_page
+        return
 
     def insert(self, table_name, value_list):
         """
@@ -122,282 +82,164 @@ class Operate(IntEnum):
         :param value_list:
         :return:
         """
-        if self.catalog_list.count(table_name) != 0:
-            table = self.table_list[table_name]
-            primary_key = table[TabOff.primary_key]
-            # 在主索引树插入
-            self.insert_index(value_list, table_name, primary_key)
-            # 在二级索引树插入
-            catalog_num = (len(table)-2) // 4
-            for i in range(0, catalog_num):
-                if i != primary_key and table[(i << 2) + 5] != -1:
-                    index_value = [value_list[primary_key], value_list[i]]
-                    self.insert_index(index_value, table_name, i)
-            return
+        table = self.get_table(table_name)
+        primary_key = table[TabOff.primary_key]
 
-        print('表名为 ' + table_name + ' 的表不存在.')
+        # 在主索引树插入
+        page_no = table[2 + (primary_key << 2) + TabOff.index_page]  # 根节点
+        # 索引的解码方式，页号+索引值
+        index_fmt = 'i' + str(table[2 + (primary_key << 2) + TabOff.fmt])
+        new_root = self.insert_index(value_list, page_no, primary_key, index_fmt)
+        if new_root != -1:
+            self.table_list[table_name][2 + (primary_key << 2) + TabOff.index_page] = new_root
 
-    def select(self, table_name, condition):
+        # 在二级索引树插入
+        catalog_num = (len(table)-2) // 4
+        for i in range(0, catalog_num):
+            if i != primary_key and table[(i << 2) + 5] != -1:
+                index_fmt = 'i' + str(table[2 + (i << 2) + TabOff.fmt])
+                value = [value_list[i], value_list[primary_key]]
+                page_no = table[2 + (i << 2) + TabOff.index_page]
+                new_root = self.insert_index(value, page_no, i, index_fmt)
+                if new_root != -1:
+                    self.table_list[table_name][2 + (i << 2) + TabOff.index_page] = new_root
+        return
+
+    def select(self, table_name, cond_list):
         """
-        直接进行查找
+        直接进行查找，二级索引叶子中r[0]是索引值，r[1]是主键值
+        :param cond_list:
         :param table_name:
-        :param condition:
         :return:
         """
-        return self.select_page(table_name, condition)
-        pass
+        table = self.get_table(table_name)
+        primary_key = table[TabOff.primary_key]
+        primary_page = table[(primary_key << 2) + 5]  # 主索引所在根
+        primary_index_fmt = 'i' + table[(primary_key << 2) + 3]
+        # 命令预处理
+        index_cond = None
+        primary_cond = None
+        page_no = -1  # 索引的根
+        index_fmt = None
+        for i, cond in enumerate(cond_list):
+            cond = re.match(r'^([A-Za-z0-9_]+)\s*([<>=]+)\s*(.+)$', cond, re.S)
+            column_name, op, value = cond.groups()
 
-    def create_index(self, table_name, index_name):
-        """
-        新建一颗二级索引树
-        树的叶节点为table中各节点的主键与值相对应index的值，
-        按index值升序排列
-        """
-        if self.catalog_list.count(table_name) != 0:
-            # 表存在
-            res = []
-            # res[]会按照[INDEX_VALUE,PRIMARY_KEY_VALUE]存储数据，调用函数排序，NEW_ROOT,不断调用插入，返回root
-            table = self.table_list[table_name]
-            # 找到table
+            # 将name转为数字
+            column = (table.index(column_name) - 2) // 4
+            # 将value转为数字
+            try:
+                value = int(value)
+            except ValueError:
+                pass
+            try:
+                value = float(value)
+            except ValueError:
+                pass
+
+            cond_list[i] = [column, op, value]
+
+            index_page = table.index(column_name) + 3
+            fmt = table.index(column_name) + 1
+            if cond_list[i][1] != '<>':  # 不等于也是遍历全部
+                if table[index_page] != -1:
+                    if column == primary_key:
+                        primary_cond = cond_list[i]
+                        page_no = table[index_page]
+                    elif index_cond is None:
+                        index_cond = cond_list[i]
+                        index_cond[0] = 0  # 在二级索引树，索引的位置变成了0
+                        page_no = table[index_page]
+                        index_fmt = 'i' + table[fmt]
+
+        ret = []
+        # 如果是主索引查询，首先到根
+        if primary_cond is not None:
+            ret = self.select_page(primary_page, primary_index_fmt, primary_cond, cond_list)
+        elif index_cond is not None:
+            primary_value = self.select_page(page_no, index_fmt, index_cond, cond_list)
+            for value in primary_value:
+                primary_cond = [primary_key, '=', value[1]]
+                page_ret = self.select_page(primary_page, primary_index_fmt, primary_cond, [primary_cond])
+                ret.extend(page_ret)
+        else:
             leaf_header = table[TabOff.leaf_header]
-            # leaf_header是第一个叶子节点所在的页号
-            page_no = leaf_header
-            primary_key_location = table[TabOff.primary_key]
-            index_location = -1
-            catalog_num = (len(table) - 2) // 4
-            for i in range(0, catalog_num + 1):
-                if (i == catalog_num):
-                    # 这个判断感觉不够巧妙
-                    print("index_name not exist")
-                    return
-                if table[(i << 2) + 2] == index_name:
-                    if (i == primary_key_location):
-                        print("no need to create index on primary key")
-                        return
-                    if table[(i << 2) + 2 + 2] is True:
-                        if (table[(i << 2) + 2 + 3] != -1):
-                            print("index already created")
-                        else:
-                            index_location = i
-                            break
-                    else:
-                        print("index not unique")
-                        return
+            ret = self.liner_select(leaf_header, cond_list)
+        return ret
 
-            while page_no != -1:
-                if self.addr_list.count(page_no) == 0:
-                    self.load_page(page_no)
-                addr = self.addr_list.index(page_no)
-                p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
-                # 第一条记录的位置 [0]有什么用？？
-                fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
-                fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
-                while p != 0:
-                    valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
-                    # 记录是否有效
-                    if valid:
-                        r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
-                        # r的具体内容我不太清楚,借助primary_key_location , index_location合成需要的数据
-                        # 类似[r[primary_key_location],r[index_location]]
-                        res.append([r[primary_key_location], r[index_location]])
-                    p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
-                    # p转到下一条记录
-
-                page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)
-                # 转到下一个page
-            # 升序排列
-            res.sort(key=secondelement)
-            # print(res)
-            # 为该表开辟文件空间存储
-            fmt = ''
-            fmt = fmt + struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[
-                primary_key_location]  # !!fmt_size addr可能未赋值
-            fmt = fmt + struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[index_location]
-            # 检验此fmt是否正确
-            root_page_no = self.new_root(True, fmt)
-            table[(i << 2) + 2 + 3] = root_page_no  # !! i可能未赋值
-            # 修改table中的index信息
-            for res_value in res:
-                self.insert_index(res_value, table_name, index_location)
-            return
-        print('表名为 ' + table_name + ' 的表不存在.')
-
-    def drop_index(self, table_name, index_name):
+    def create_index(self, table_name, index):
         """
-        删除指定的一颗二级索引树
-        和要求格式有所出入
-        调用delete_buffer
-
+        创建一颗树
+        :param table_name:
+        :param index:
+        :return:
         """
-        if self.catalog_list.count(table_name) != 0:
-            # 表存在
-            table = self.table_list[table_name]
-            # 找到table
-            # leaf_header = -1
-            page_no = -1  # nope
-            primary_key_location = table[TabOff.primary_key]
-            # index_location = -1
-            catalog_num = (len(table) - 2) // 4
-            for i in range(0, catalog_num + 1):
-                if (i == catalog_num):
-                    print("index_name not exist")
-                    return
-                if table[(i << 2) + 2] == index_name:
-                    if (i == primary_key_location):
-                        print("can't drop primary key")
-                        return
-                    if (table[(i << 2) + 2 + 3] != -1):  # 检查index_page
-                        page_no = table[(i << 2) + 2 + 3]  # 找到index_page
-                        # index_location = i
-                        # leaf_header = page_no
-                        table[(i << 2) + 2 + 3] = -1  # 索引清除，table中信息置为-1
-                        break
-                    else:
-                        print("index not created")
-                        return
+        table = self.get_table(table_name)
+        res = []
+        # res[]会按照[INDEX_VALUE,PRIMARY_KEY_VALUE]存储数据，调用函数排序，NEW_ROOT,不断调用插入，返回root
+        leaf_header = table[TabOff.leaf_header]  # leaf_header是第一个叶子节点所在的页号
+        page_no = leaf_header
+        col_num = (len(table) - 2) // 4
+        fmt = ''
+        for i in range(col_num):
+            fmt = fmt + table[(i << 2) + 3]
+        primary_key = table[TabOff.primary_key]
 
-            while page_no != -1:
-                # self.addr_list.count(page_no) == 0: 的情况应该不存在 ，但是我不确定
-                addr = self.addr_list.index(page_no)
-                temp_page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)
-                self.delete_buffer(page_no)
-                # 直接运用的现有函数，可能会有问题
-                page_no = temp_page_no
-                # 转到下一个page
+        if table[(index << 2) + 5] != -1:
+            raise Exception('I1')
+        elif table[(index << 2) + 4] is not True:
+            raise Exception('I2')
+        if primary_key == index:
+            raise Exception('I3')
 
-            return
-        print('表名为 ' + table_name + ' 的表不存在.')
+        sec_fmt = table[(index << 2) + 3] + table[(primary_key << 2) + 3]
+        sec_index_fmt = 'i' + table[(index << 2) + 3]
+
+        while page_no != -1:
+            addr = self.get_addr(page_no)
+            p = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.header)[0]
+            while p != 0:
+                r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+                res.append([r[index], r[primary_key]])
+                p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
+            page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)[0]
+
+        page_no = self.create_tree(res, sec_fmt, sec_index_fmt)
+        self.table_list[table_name][(index << 2) + 5] = page_no
+
+    def drop_index(self, table_name, index):
+        """
+        删除指定索引
+        :param table_name:
+        :param index:
+        :return:
+        """
+        table = self.get_table(table_name)
+        page_no = table[(index << 2) + 5]
+        fmt = table[(index << 2) + 3]
+        index_fmt = 'i' + fmt
+        self.drop_tree(page_no, index_fmt)
+        self.table_list[table_name][(index << 2) + 5] = -1
 
     def drop_table(self, table_name):
-        if self.catalog_list.count(table_name) != 0:
-            # 表存在
-            table = self.table_list[table_name]
-            # 找到table
-            leaf_header = table[TabOff.leaf_header]
-            # leaf_header是第一个叶子节点所在的页号   , 那么它也是primary_key对应的页号
-            page_no = leaf_header
-            primary_key_location = table[TabOff.primary_key]
-            catalog_num = (len(table) - 2) // 4
-            for i in range(0, catalog_num):
-                if (table[(i << 2) + 2 + 3] != -1 and i != primary_key_location):  # 若存在索引，不为主键
-                    self.delete_index(table_name, table[(i << 2) + 2])  # !!使用错误
-                elif (i == primary_key_location):  # 主键的情况,对应主索引树
-                    table[(i << 2) + 2 + 3] = -1
-                    while page_no != -1:
-                        # self.addr_list.count(page_no) == 0: 的情况应该不存在 ，但是我不确定
-                        addr = self.addr_list.index(page_no)
-                        temp_page_no = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.next_page)
-                        self.delete_buffer(page_no)
-                        # 直接运用的现有函数，可能会有问题
-                        page_no = temp_page_no
-                        # 转到下一个page
-            self.catalog_list[table_name] = -1
-=======
-            pre = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.pre_addr)[0]
-            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
-            next = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
-            print("record:\tpre:" + str(pre) + '\tnext:' + str(next) + '\tr:', end='')
-            print(r)
-            p = next
-
-    def create_table(self, table_name, primary_key, table_info):
         """
-        table_name  表名称
-        fmt_list     列表，每个字符串格式
-        column_list 列表，属性的名称
-        unique_list 列表，属性是否唯一
-        primary_key 字符串
+        删除一个表
+        :param table_name:
+        :return:
         """
-        self.new_table(table_name, primary_key, table_info)
-
-    def select(self,args):
-        op=Operate.select
-        args = re.sub(r' +', ' ', args).strip().replace('\u200b','')
-        lists = args.split(' ')
-        start_from = re.search('from', args).start()
-        end_from = re.search('from', args).end()
-        columns = args[0:start_from].strip()
-        if re.search('where', args):
-            start_where = re.search('where', args).start()
-            end_where = re.search('where', args).end()
-            table = args[end_from+1:start_where].strip()
-            conditions = args[end_where+1:].strip()
-        else:
-            table = args[end_from+1:].strip()
-            conditions = ''
-        #CatalogManager.catalog.not_exists_table(table)
-        #CatalogManager.catalog.check_select_statement(table,conditions,columns)
-        returnvalue=IndexManager.index.select_from_table(table,conditions,columns)
-        return returnvalue
-
-        
-    def delete(self,args):
-        """
-        args:输入的数据
-        删除data：根据select_index，将对应的记录enable=0
-        删除index：根据select_index，将节点的指针删除，然后循环删除
-        整个过程和插入差不多
-        """
-        op=Operate.delete
-        args = re.sub(r' +', ' ', args).strip().replace('\u200b','')
-        lists = args.split(' ')
-        if lists[0] != 'from':#delete from table_name where ......
-            raise Exception("API Module : Unrecoginze symbol for command 'delete',it should be 'from'.")
-        table_name = lists[1]
-        returnvalue=select(self,args)
-        if self.catalog_list.count(table_name) != 0:
-            table = self.table_list[table_name]
-            
-            primary_key = table[TabOff.primary_key]
-            addr = self.delete_index(returnvalue, table_name, primary_key)
-            catalog_num = (len(table)-2) // 4
-            for i in range(0, catalog_num):
-                if i != primary_key and table[(i << 2) + 5] != -1:
-                    index_value = [addr, returnvalue[i]]
-                    self.insert_index(index_value, table_name, i)
-            return
-        raise RuntimeError('表名为 ' + table_name + ' 的表不存在.') 
-
-
-
-    def insert(self, table_name, value_list):
-        """
-        插入
-        """
-        op = Operate.insert
-        # 插入前看表是否存在0
-
-        if self.catalog_list.count(table_name) != 0:
-            table = self.table_list[table_name]
-            primary_key = table[TabOff.primary_key]
-            addr = self.insert_index(value_list, table_name, primary_key)
-            catalog_num = (len(table)-2) // 4
-            for i in range(0, catalog_num):
-                if i != primary_key and table[(i << 2) + 5] != -1:
-                    index_value = [addr, value_list[i]]
-                    self.insert_index(index_value, table_name, i)
-            return
-        print('表名为 ' + table_name + ' 的表不存在.')
+        table = self.get_table(table_name)
+        col_num = (len(table) - 1)//4
+        for i in range(col_num):
+            page_no = table[(i << 2) + 5]
+            fmt = table[(i << 2) + 3]
+            index_fmt = 'i' + fmt
+            if page_no != -1:
+                self.drop_tree(page_no, index_fmt)
+        self.delete_table(table_name)
+        return
 
     def quit(self):
-        for i in range(len(self.addr_list)):
-            if self.dirty_list[i] and self.addr_list[i] != -1:
-                self.unload_buffer(i)
-        write_json('buffer', {"file_list": list(self.file_list)})
-        catalog_info = {}
-        catalog_info["catalog_list"] = list(self.catalog_list)
-        for table in self.catalog_list:
-            if table != -1:
-                catalog_info[table] = list(self.table_list[table])
-        write_json('catalog', catalog_info)
+        self.quit_catalog()
+        self.quit_buffer()
         print("退出成功.")
         pass
-
-
-def firstelement(elem):
-    return elem(0)
-
-
-
-def secondelement(elem):
-    return elem(1)

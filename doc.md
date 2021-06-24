@@ -173,10 +173,11 @@ while p != 0:
 | E1       | 错误的指令                                |
 | E2       | 缺少参数                                  |
 | E3       | 不支持的数据类型                          |
+|  E4 		  | 数据长度过长|
 | B1       | 内存不足                                  |
 | T1       | 表名已经存在                              |
 | T2       | 表名不存在                                |
-| R1       | 属性名不存在                              |
+| R1       | 属性名不存在                             |
 | R2       | 属性名已经存在                            |
 | R3       | value个数不匹配                           |
 | R4       | value格式不匹配                           |
@@ -184,19 +185,6 @@ while p != 0:
 | I1       | 索引已经存在                              |
 | I2       | 非unique建立索引                          |
 | I3       | 主键                                      |
+| I4                   | 删除时尚未创建索引|
 
 
-
-| 操作         | 可能的错误   |
-| ------------ | ------------ |
-| create table | T1, R2, R1   |
-| drop table   | T2           |
-| create index | I1,T2,R1,I2, |
-| drop index   | T2, R1, I3   |
-| insert       | T2,R3,R4,R5  |
-| delete       | T2,E         |
-| select       | T2           |
-
-
-
-注意，不在interpreter里面发现异常，intrpreter只处理异常。打印结果。

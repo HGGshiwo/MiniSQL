@@ -1,6 +1,6 @@
 import struct
-from CatalogManager import CatalogManager
-from BufferManager import Off
+import math
+from BufferManager import Off, BufferManager
 from enum import IntEnum
 
 
@@ -12,9 +12,9 @@ class RecOff(IntEnum):
     record = 13
 
 
-class RecordManager(CatalogManager):
-    def __init__(self):
-        CatalogManager.__init__(self)
+class RecordManager(BufferManager):
+    def __init__(self, lock_list):
+        BufferManager.__init__(self, lock_list)
 
     def insert_record(self, addr, record, index):
         """
@@ -37,7 +37,9 @@ class RecordManager(CatalogManager):
         # offset是物理地址相对addr的偏移
         offset = fmt_size + Off.fmt
         valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + offset + RecOff.valid)[0]  # 是否有效
-        gap = struct.calcsize('?3i' + fmt)
+        gap = struct.calcsize('3i')
+        gap += struct.calcsize('?')
+        gap += struct.calcsize(fmt)
         while valid:
             offset = offset + gap
             if offset + gap > 4096:
@@ -115,7 +117,7 @@ class RecordManager(CatalogManager):
                 else:
                     next_record = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + next_addr + RecOff.record)
                     head_value = next_record[index]
-                    struct.pack_into('i', self.pool.buf, Off.header, next_addr)
+                    struct.pack_into('i', self.pool.buf, (addr << 12) + Off.header, next_addr)
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
         # 通过物理地址检测是否需要合并
         valid_num, invalid_num = self.count_valid(addr)
@@ -126,7 +128,7 @@ class RecordManager(CatalogManager):
         """
         统计一页中有几条有效记录
         :param addr:
-        :return:
+        :return:valid_num, invalid_num
         """
         valid_num = 0
         invalid_num = 0
@@ -134,7 +136,9 @@ class RecordManager(CatalogManager):
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
         fmt = str(fmt, encoding='utf8')
         p = fmt_size + Off.fmt
-        gap = struct.calcsize('?3i' + fmt)
+        gap = struct.calcsize('?')
+        gap += struct.calcsize('3i')
+        gap += struct.calcsize(fmt)
         while p < 4096:
             valid = struct.unpack_from('?', self.pool.buf, (addr << 12) + p + RecOff.valid)[0]
             if valid:
@@ -157,7 +161,10 @@ class RecordManager(CatalogManager):
         fmt_size = struct.unpack_from('i', self.pool.buf, (addr << 12) + Off.fmt_size)[0]
         fmt = struct.unpack_from(str(fmt_size) + 's', self.pool.buf, (addr << 12) + Off.fmt)[0]
         while p != 0:
-            r = struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record)
+            r = list(struct.unpack_from(fmt, self.pool.buf, (addr << 12) + p + RecOff.record))
+            for i in range(len(r)):
+                if isinstance(r[i], bytes):
+                    r[i] = str(r[i], encoding='utf8').strip(b'\x00'.decode())  
             match = check_cond(r, cond_list)
             if match:
                 res.append(r)
@@ -166,6 +173,7 @@ class RecordManager(CatalogManager):
                 break
             p = struct.unpack_from('i', self.pool.buf, (addr << 12) + p + RecOff.next_addr)[0]
         pass
+
         return res
 
 
@@ -178,15 +186,18 @@ def check_cond(r, cond_list):
     """
     for cond in cond_list:
         if cond[1] == "=":
-            if r[cond[0]] != cond[2]:
+            if isinstance(cond[0], float):
+                if not math.isclose(r[cond[0]], cond[2]):
+                    return False
+            elif r[cond[0]] != cond[2]:
                 return False
-        elif cond[0] == "<":
+        elif cond[1] == "<":
             if r[cond[0]] >= cond[2]:
                 return False
         elif cond[1] == "<=":
             if r[cond[0]] > cond[2]:
                 return False
-        elif cond[0] == ">":
+        elif cond[1] == ">":
             if r[cond[0]] <= cond[2]:
                 return False
         elif cond[1] == ">=":
