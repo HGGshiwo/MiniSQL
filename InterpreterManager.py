@@ -324,7 +324,7 @@ class InterpreterManager(Cmd, Api):
 
     def default(self, line):
         # print('Unrecognized command.\nNo such symbol : %s' % line)
-        raise Exception('E1')
+        print('E1')
 
 
 def find_last(string, s):

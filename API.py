@@ -128,8 +128,14 @@ class Api(IndexManager, CatalogManager):
             # 将name转为数字
             column = (table.index(column_name) - 2) // 4
             # 将value转为数字
-            if value.isdigit():
-                value = eval(value)
+            try:
+                value = int(value)
+            except ValueError:
+                pass
+            try:
+                value = float(value)
+            except ValueError:
+                pass
 
             cond_list[i] = [column, op, value]
 

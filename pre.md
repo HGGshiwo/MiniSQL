@@ -33,7 +33,6 @@ select * from student where rank<=99
 select * from student where rank <> 99
 select * from student where ID = 99
 select * from student where name = Leo
-select * from student where name = Leo and score < 0.5
 ```
 
 ## 5.drop index
