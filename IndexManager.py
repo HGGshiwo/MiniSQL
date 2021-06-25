@@ -121,11 +121,12 @@ class IndexManager(RecordManager):
                 = self.pool.buf[(cur_addr << 12) + Off.is_leaf:(cur_addr << 12) + Off.fmt + cur_fmt_size]
             struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.header, 0)
             struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.current_page, right_page)
-
+            struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.previous_page, cur_page)
             # 然后维护页链表
             next_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.next_page)[0]
             struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.next_page, next_page)
             struct.pack_into('i', self.pool.buf, (cur_addr << 12) + Off.next_page, right_page)
+
             if next_page != -1:
                 next_addr = self.get_addr(next_page)
                 struct.pack_into('i', self.pool.buf, (next_addr << 12) + Off.previous_page, right_page)
