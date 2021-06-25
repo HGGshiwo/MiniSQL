@@ -4,8 +4,8 @@ from RecordManager import RecordManager, RecOff
 
 
 class IndexManager(RecordManager):
-    def __init__(self, lock_list=None):
-        RecordManager.__init__(self, lock_list)
+    def __init__(self):
+        RecordManager.__init__(self)
 
     def print_page(self, page_no):
         addr = self.get_addr(page_no)

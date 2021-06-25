@@ -13,8 +13,8 @@ class RecOff(IntEnum):
 
 
 class RecordManager(BufferManager):
-    def __init__(self, lock_list):
-        BufferManager.__init__(self, lock_list)
+    def __init__(self):
+        BufferManager.__init__(self)
 
     def insert_record(self, addr, record, index):
         """

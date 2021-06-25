@@ -17,9 +17,8 @@ class CatalogManager(object):
     """
     表管理类
     """
-    def __init__(self, table_lock = None):
+    def __init__(self):
         try:
-            self.table_lock = table_lock
             self.catalog_list = shared_memory.ShareableList(sequence=None, name='catalog_list')
             self.table_list = {}
             for table in self.catalog_list:
@@ -94,4 +93,3 @@ class CatalogManager(object):
         with open(address, 'w') as file:
             file.write(buffer)
         self.catalog_list.shm.close()
-
