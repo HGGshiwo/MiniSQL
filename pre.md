@@ -12,9 +12,7 @@
 
 ```insert into test values (410, 0, Tom, 0.9473110135533653)```
 
-插入结束后展示文件存储，位置为db_files，内容为空，未写入
 
-退出后展示文件存储，内容被写入，为二进制比特数据
 
 ## 3.create index
 在rank属性创建索引
@@ -33,6 +31,7 @@ select * from student where rank<=99
 select * from student where rank <> 99
 select * from student where ID = 99
 select * from student where name = Leo
+select * from student where name = Leo and ID = 505
 ```
 
 ## 5.drop index

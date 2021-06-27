@@ -13,15 +13,15 @@ class RecOff(IntEnum):
 
 
 class RecordManager(BufferManager):
-    def __init__(self):
-        BufferManager.__init__(self)
+    def __init__(self, lock_list):
+        BufferManager.__init__(self, lock_list)
 
     def insert_record(self, addr, record, index):
         """
         在指定的index的页中插入一条数据，如果已满，则删除最后一条数据，然后插入新数据，然后返回
 
         :param index: 以第几个属性为索引进行插入
-        :param addr:
+        :param addr: 地址
         :param record:插入的数据
         :return:返回 head_value, record
                 分别表示该节点头需要修改的值，该节点最后一条记录。
@@ -127,8 +127,8 @@ class RecordManager(BufferManager):
     def count_valid(self, addr):
         """
         统计一页中有几条有效记录
-        :param addr:
-        :return:valid_num, invalid_num
+        :param addr:待统计的地址
+        :return:valid_num, invalid_num 有效记录和无效记录的数目
         """
         valid_num = 0
         invalid_num = 0
@@ -180,9 +180,9 @@ class RecordManager(BufferManager):
 def check_cond(r, cond_list):
     """
     对record进行检测
-    :param r:
-    :param cond_list:
-    :return: True
+    :param r:待检测的记录
+    :param cond_list:检测的条件
+    :return: True/False
     """
     for cond in cond_list:
         if cond[1] == "=":
@@ -212,9 +212,9 @@ def check_cond(r, cond_list):
 def go_ahead(r, index_cond):
     """
     判断是否对下一条记录进行检查，在一页中总是从左往右检查的
-    :param r:
-    :param index_cond:
-    :return:
+    :param r:待检测的记录
+    :param index_cond:索引使用的条件
+    :return:True/False
     """
     if index_cond is None:
         return True

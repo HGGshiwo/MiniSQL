@@ -17,10 +17,15 @@ class TabOff(IntEnum):
 
 
 class Api(IndexManager, CatalogManager):
-    def __init__(self, lock=None):
-        self.lock = lock
-        IndexManager.__init__(self)
-        CatalogManager.__init__(self)
+    def __init__(self, lock_list=None):
+        self.grant_list = []
+
+        if lock_list is not None:
+            IndexManager.__init__(self, lock_list[256:])
+            CatalogManager.__init__(self, lock_list[0:256])
+        else:
+            IndexManager.__init__(self)
+            CatalogManager.__init__(self)
 
     def print_info(self):
         print("pool", end='\t\t')
@@ -30,42 +35,30 @@ class Api(IndexManager, CatalogManager):
         print('file_list', end='\t\t')
         print(self.file_list)
 
-    def pin(self):
-        if self.lock is not None:
-            self.lock.acquire()
-
-    def unpin(self):
-        if self.lock is not None:
-            self.lock.release()
-
     def create_table(self, table_name, primary_key, table_info):
         """
         为新表格在catalog中注册
-        :param table_name:
-        :param primary_key:
-        :param table_info: 顺序是name, fmt, unique, index_page全部是-1
-        :return:
+        :param table_name:表名
+        :param primary_key:主键在表中的位置
+        :param table_info: 顺序是name, fmt, unique, index_page。其中index_page全部是-1
+        :return:None
         """
         # 为该表开辟文件空间存储
-        self.pin()
         fmt = ''
         for i in range(len(table_info)):
             if i % 4 == 1:
                 fmt = fmt + table_info[i]
         page_no = self.new_root(True, fmt)
         self.new_table(table_name, primary_key, table_info, page_no)
-        if self.lock is not None:
-            self.lock.release()
-        self.unpin()
+        pass
 
     def delete(self, table_name, condition):
         """
         删除满足condition的节点
-        :param table_name:
-        :param condition:
-        :return:
+        :param table_name:表名
+        :param condition:索引条件
+        :return:None
         """
-        self.pin()
         table = self.get_table(table_name)
         delete_list = self.select(table_name, condition)  # 返回对应的记录
 
@@ -80,17 +73,15 @@ class Api(IndexManager, CatalogManager):
                         self.table_list[table_name][TabOff.leaf_header] = leaf_header
                     if index_page is not None:
                         self.table_list[table_name][(i << 2) + 5] = index_page
-        self.unpin()
         return
 
     def insert(self, table_name, value_list):
         """
         插入一条数据
-        :param table_name:
-        :param value_list:
-        :return:
+        :param table_name:表名
+        :param value_list:一条数据
+        :return:None
         """
-        self.pin()
         table = self.get_table(table_name)
         primary_key = table[TabOff.primary_key]
 
@@ -112,17 +103,15 @@ class Api(IndexManager, CatalogManager):
                 new_root = self.insert_index(value, page_no, i, index_fmt)
                 if new_root != -1:
                     self.table_list[table_name][2 + (i << 2) + TabOff.index_page] = new_root
-        self.unpin()
         return
 
     def select(self, table_name, cond_list):
         """
         直接进行查找，二级索引叶子中r[0]是索引值，r[1]是主键值
-        :param cond_list:
-        :param table_name:
-        :return:
+        :param cond_list:索引条件
+        :param table_name:表名
+        :return:符合条件的记录列表 res
         """
-        self.pin()
         table = self.get_table(table_name)
         primary_key = table[TabOff.primary_key]
         primary_page = table[(primary_key << 2) + 5]  # 主索引所在根
@@ -139,14 +128,8 @@ class Api(IndexManager, CatalogManager):
             # 将name转为数字
             column = (table.index(column_name) - 2) // 4
             # 将value转为数字
-            try:
-                value = int(value)
-            except ValueError:
-                pass
-            try:
-                value = float(value)
-            except ValueError:
-                pass
+            if value.isdigit():
+                value = eval(value)
 
             cond_list[i] = [column, op, value]
 
@@ -176,17 +159,15 @@ class Api(IndexManager, CatalogManager):
         else:
             leaf_header = table[TabOff.leaf_header]
             ret = self.liner_select(leaf_header, cond_list)
-        self.unpin()
         return ret
 
     def create_index(self, table_name, index):
         """
-        创建一颗树
-        :param table_name:
-        :param index:
-        :return:
+        创建二级索引树
+        :param table_name:表名
+        :param index:索引位置
+        :return:None
         """
-        self.pin()
         table = self.get_table(table_name)
         res = []
         # res[]会按照[INDEX_VALUE,PRIMARY_KEY_VALUE]存储数据，调用函数排序，NEW_ROOT,不断调用插入，返回root
@@ -219,31 +200,27 @@ class Api(IndexManager, CatalogManager):
 
         page_no = self.create_tree(res, sec_fmt, sec_index_fmt)
         self.table_list[table_name][(index << 2) + 5] = page_no
-        self.unpin()
 
     def drop_index(self, table_name, index):
         """
         删除指定索引
-        :param table_name:
-        :param index:
-        :return:
+        :param table_name:表名
+        :param index:索引位置
+        :return:None
         """
-        self.pin()
         table = self.get_table(table_name)
         page_no = table[(index << 2) + 5]
         fmt = table[(index << 2) + 3]
         index_fmt = 'i' + fmt
         self.drop_tree(page_no, index_fmt)
         self.table_list[table_name][(index << 2) + 5] = -1
-        self.unpin()
 
     def drop_table(self, table_name):
         """
         删除一个表
-        :param table_name:
-        :return:
+        :param table_name:表名
+        :return:None
         """
-        self.pin()
         table = self.get_table(table_name)
         col_num = (len(table) - 1)//4
         for i in range(col_num):
@@ -253,13 +230,10 @@ class Api(IndexManager, CatalogManager):
             if page_no != -1:
                 self.drop_tree(page_no, index_fmt)
         self.delete_table(table_name)
-        self.unpin()
         return
 
     def quit(self):
-        self.pin()
         self.quit_catalog()
         self.quit_buffer()
         print("退出成功.")
-        self.unpin()
         pass

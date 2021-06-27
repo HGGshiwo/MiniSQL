@@ -6,7 +6,9 @@ from multiprocessing import shared_memory
 
 class LockOff(IntEnum):
     addr_list = 256
-    file_list = 257
+    dirty_list = 257
+    refer_list = 258
+    file_list = 259
 
 
 class Off(IntEnum):
@@ -24,7 +26,8 @@ class BufferManager(object):
     """
     内存管理类
     """
-    def __init__(self):
+    def __init__(self, lock_list):
+        self.lock_list = lock_list
         try:
             self.pool = shared_memory.SharedMemory(create=False, name='pool')
             self.addr_list = shared_memory.ShareableList(sequence=None, name='addr_list')
@@ -50,7 +53,6 @@ class BufferManager(object):
         :return: page_no在pool中的地址
         """
         # 如果有空闲的位置
-
         if self.addr_list.count(-1) != 0:
             index = self.addr_list.index(-1)
             self.addr_list[index] = page_no
@@ -107,8 +109,8 @@ class BufferManager(object):
         """
          将缓存中的page_no删除，将文件删除
         :param self:
-        :param page_no:
-        :return:
+        :param page_no:待删除的页号
+        :return:None
         """
         addr = self.get_addr(page_no)
         self.file_list[page_no] = -1
@@ -130,8 +132,8 @@ class BufferManager(object):
     def get_addr(self, page_no):
         """
         寻找page_no的地址
-        :param page_no:
-        :return: addr
+        :param page_no:待查找的页号
+        :return: addr 地址
         """
         if self.addr_list.count(page_no) == 0:
             self.load_page(page_no)

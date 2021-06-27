@@ -26,38 +26,17 @@ class InterpreterManager(Cmd, Api):
             if command[0] == '#':
                 continue
             if command.split(' ')[0] == 'insert':
-                # try:
-                #     Api.insert(command[6:])
-                # except Exception as e:
-                #     print(str(e))
                 self.do_insert(command[6:])
             elif command.split(' ')[0] == 'select':
-                # try:
-                #     Api.select(command[6:])
-                # except Exception as e:
-                #     print(str(e))
                 self.do_select(command[6:])
             elif command.split(' ')[0] == 'delete':
-                # try:
-                #     Api.delete(command[6:])
-                # except Exception as e:
-                #     print(str(e))
                 self.do_delete(command[6:])
             elif command.split(' ')[0] == 'drop':
-                # try:
-                #     Api.drop(command[4:])
-                # except Exception as e:
-                #     print(str(e))
                 self.do_drop(command[4:])
             elif command.split(' ')[0] == 'create':
-                # try:
-                #     Api.create(command[6:])
-                # except Exception as e:
-                #     print(str(e))
                 self.do_create(command[6:])
             elif command.split(' ')[0] == 'quit':
                 self.do_quit()
-        # __finalize__()
         pass
 
     def do_select(self, args):
@@ -78,25 +57,16 @@ class InterpreterManager(Cmd, Api):
                 start_where = re.search('where', args).start()
                 end_where = re.search('where', args).end()
                 table_name = args[end_from + 1:start_where].strip()
-                # print(table_name)
                 condition = args[end_where + 1:].strip()
-                # print(condition)
                 condition_list = condition.split(' and ')
-                # print(condition_list)
             else:
                 table_name = args[end_from + 1:].strip()
-                # print(table_name)
                 condition_list = []
-            # self.select(table_name, condition_list)
             res=self.select(table_name,condition_list)
             table = self.table_list[table_name]
             len_table = (len(table) - 2) // 4
             for i in range(len_table):
                 column_name.append(table[(i<<2)+2])
-            # print('name',column_name)
-            # print(res)
-            # print([column_name,res])
-            #res qian jiayiduan
             if(res):
                 print_record([column_name, res])
             else:
@@ -124,14 +94,10 @@ class InterpreterManager(Cmd, Api):
                     pass
                 else:
                     raise Exception('I3')
-                    # raise Exception('E1')
                 primary_place = re.search('primary key *\(', statement).end()
                 primary_place_end = re.search('\)', statement[primary_place:]).start()
                 primary_key = statement[primary_place:][:primary_place_end].strip()
                 cols = statement.split(',')
-                # print(primary_key)
-                # print(cols)
-                # print(len(cols))
                 for i,cur_column_statement in enumerate(cols[0:len(cols) - 1]):
                     cur_column_statement = cur_column_statement.strip()
                     cur_lists = cur_column_statement.split(' ')
@@ -155,13 +121,10 @@ class InterpreterManager(Cmd, Api):
                     else:
                         raise Exception('E3')
                     table_info.extend([column_name, fmt, is_unique, -1])
-                # print(table_info)
-                # print(primary_key_index)
                 self.create_table(table_name, primary_key_index, table_info)
                 print('create table finished in '+str(time.time() - t))
             elif lists[0] == 'index':
                 index = None
-                # create index index_name on table_name
                 if len(lists) < 4:
                     raise Exception('E1')
                 index_name = lists[1]
@@ -170,7 +133,7 @@ class InterpreterManager(Cmd, Api):
                 table_name = lists[3]
                 table = self.table_list[table_name]
                 len_table = (len(table) - 2) // 4
-                for i in range(len_table+1):#别乱改
+                for i in range(len_table+1):
                     if i == len_table:
                         raise Exception('R1')
                     if table[(i << 2) + 2] == index_name:
@@ -271,15 +234,6 @@ class InterpreterManager(Cmd, Api):
                     if len(item) > int(fmt):
                         # print(item)
                         raise Exception('T1')
-                # unique检测，开销预计会很大
-                # if cur_table[(index << 2) + 4]:
-                #     line = ''
-                #     line = line + cur_table[(index << 2) + 2]
-                #     line = line + '='
-                #     line = line + str(item)
-                    # print(line)
-                    # if(self.select(table_name,line)) :
-                    #     raise Exception('R5')
                 value_list.append(item)
             self.insert(table_name, value_list)
             print('insert finished in '+str(time.time() - t))
@@ -324,7 +278,7 @@ class InterpreterManager(Cmd, Api):
 
     def default(self, line):
         # print('Unrecognized command.\nNo such symbol : %s' % line)
-        print('E1')
+        raise Exception('E1')
 
 
 def find_last(string, s):
@@ -345,10 +299,9 @@ def concat_list(lists):
 
 def print_record(data_list):
     """
-    友好的输出记录
+    友好化输出记录
     :param data_list: 第一个是列名，然后是记录
-    !!和原来的输入有差别!!
-    :return:
+    :return:None
     """
     r_len = len(data_list[0]) #每个数据有多少列
     len_list = [0] * r_len

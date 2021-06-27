@@ -4,8 +4,8 @@ from RecordManager import RecordManager, RecOff
 
 
 class IndexManager(RecordManager):
-    def __init__(self):
-        RecordManager.__init__(self)
+    def __init__(self, lock_list=None):
+        RecordManager.__init__(self, lock_list)
 
     def print_page(self, page_no):
         addr = self.get_addr(page_no)
@@ -45,7 +45,7 @@ class IndexManager(RecordManager):
 
     def new_root(self, is_leaf, fmt):
         """
-         创建新的根节点，不会在catalog中修改，因此需要外部修改catalog
+        创建新的根节点，不会在catalog中修改，因此需要外部修改catalog
         会直接写入buffer_pool中，可以从buffer_pool中获得该页
         :param is_leaf: 是否是叶子
         :param fmt: 新的根解码形式
@@ -121,12 +121,11 @@ class IndexManager(RecordManager):
                 = self.pool.buf[(cur_addr << 12) + Off.is_leaf:(cur_addr << 12) + Off.fmt + cur_fmt_size]
             struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.header, 0)
             struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.current_page, right_page)
-            struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.previous_page, cur_page)
+
             # 然后维护页链表
             next_page = struct.unpack_from('i', self.pool.buf, (cur_addr << 12) + Off.next_page)[0]
             struct.pack_into('i', self.pool.buf, (right_addr << 12) + Off.next_page, next_page)
             struct.pack_into('i', self.pool.buf, (cur_addr << 12) + Off.next_page, right_page)
-
             if next_page != -1:
                 next_addr = self.get_addr(next_page)
                 struct.pack_into('i', self.pool.buf, (next_addr << 12) + Off.previous_page, right_page)
@@ -197,13 +196,13 @@ class IndexManager(RecordManager):
 
     def delete_index(self, page_no, index, index_fmt, value):
         """
-        当我找到一条记录后，主索引值，其他索引值都知道了，因此可以执行删除索引值是value的记录
+        当找到一条记录后，主索引值，其他索引值都知道了，因此可以执行删除索引值是value的记录
 
-        :param page_no:
-        :param index_fmt:
-        :param index:
-        :param value:
-        :return: leaf header, index page
+        :param page_no:根节点所在的页号
+        :param index_fmt:索引格式
+        :param index:当前的索引是第几个
+        :param value:索引值
+        :return: leaf header, index page 叶子头节点指针 新根所在的page_no
         """
         addr = self.get_addr(page_no)
         is_leaf = struct.unpack_from('?', self.pool.buf, (addr << 12) + Off.is_leaf)[0]
@@ -367,10 +366,10 @@ class IndexManager(RecordManager):
     def replace_value(self, page_no, index_fmt, head_value):
         """
         在page_no的父节点，把page_no对应的value替换为head_value，一直到根
-        :param page_no:
-        :param index_fmt:
+        :param page_no:根节点所在的页号
+        :param index_fmt:索引格式
         :param head_value: 想要修改成的值
-        :return:
+        :return:None
         """
         is_delete = True
         addr = self.get_addr(page_no)
@@ -399,11 +398,11 @@ class IndexManager(RecordManager):
     def select_page(self, page_no, index_fmt, index_cond, cond_list):
         """
         在指定根页的树中查找
-        :param index_cond:
-        :param index_fmt:
-        :param page_no:
+        :param index_cond:索引使用的条件
+        :param index_fmt:索引格式
+        :param page_no:根节点所在的页号
         :param cond_list:列表,放不同的语句，类似于[[0, '=', 2],[1, '>', 3]]
-        :return:
+        :return:符合条件的记录列表 res
         """
         res = []
         addr = self.get_addr(page_no)
@@ -446,9 +445,9 @@ class IndexManager(RecordManager):
     def liner_select(self, leaf_header, cond_list):
         """
         线性查找
-        :param leaf_header:
-        :param cond_list:
-        :return:
+        :param leaf_header:根节点所在的页号
+        :param cond_list:列表,放不同的语句，类似于[[0, '=', 2],[1, '>', 3]]
+        :return:符合条件的记录列表 res
         """
         res = []
         page = leaf_header
@@ -463,9 +462,9 @@ class IndexManager(RecordManager):
     def drop_tree(self, page_no, index_fmt):
         """
         删除以page_no为根节点的树
-        :param page_no:
-        :param index_fmt:
-        :return:
+        :param page_no:根节点所在的页号
+        :param index_fmt:索引格式
+        :return:None
         """
         stack = []
         stack.append(page_no)
@@ -487,9 +486,9 @@ class IndexManager(RecordManager):
     def create_tree(self, value_list, fmt, index_fmt):
         """
         创建一颗树，返回树的位置
-        :param index_fmt:
-        :param fmt:
-        :param value_list:
+        :param index_fmt:索引格式
+        :param fmt:根解码形式
+        :param value_list:一条记录
         :return: 树的根节点
         """
         page_no = self.new_root(True, fmt)
